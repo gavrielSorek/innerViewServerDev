@@ -8,12 +8,12 @@ import { CreateClientDto } from './dto/create-client.dto';
 export class ClientsService {
   constructor(@InjectModel(Client.name) private clientModel: Model<ClientDocument>) {}
 
-  async findAll(): Promise<Client[]> {
-    return this.clientModel.find().exec();
+  async findAll(userId: string): Promise<Client[]> {
+    return this.clientModel.find({ userId }).exec();
   }
 
-  async findOne(id: string): Promise<Client> {
-    const client = await this.clientModel.findById(id).exec();
+  async findOne(id: string, userId: string): Promise<Client> {
+    const client = await this.clientModel.findOne({ _id: id, userId }).exec();
     if (!client) {
       throw new NotFoundException(`Client with ID "${id}" not found`);
     }
@@ -26,15 +26,15 @@ export class ClientsService {
   }
 
   async update(id: string, updateClientDto: CreateClientDto): Promise<Client> {
-    const existingClient = await this.clientModel.findByIdAndUpdate(id, updateClientDto, { new: true }).exec();
+    const existingClient = await this.clientModel.findOneAndUpdate({ _id: id, userId: updateClientDto.userId }, updateClientDto, { new: true }).exec();
     if (!existingClient) {
       throw new NotFoundException(`Client with ID "${id}" not found`);
     }
     return existingClient;
   }
 
-  async remove(id: string): Promise<any> {
-    const result = await this.clientModel.findByIdAndDelete(id).exec();
+  async remove(id: string, userId: string): Promise<any> {
+    const result = await this.clientModel.findOneAndDelete({ _id: id, userId }).exec();
     if (!result) {
       throw new NotFoundException(`Client with ID "${id}" not found`);
     }

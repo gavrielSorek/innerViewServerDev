@@ -1,11 +1,9 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
 
-// Add export here
 export type ClientDocument = Client & Document;
 
 @Schema()
-// And add export here
 export class Client {
   @Prop()
   name: string;
@@ -30,7 +28,9 @@ export class Client {
 
   @Prop()
   openingDate: string;
+
+  @Prop()
+  userId: string;
 }
 
-// And finally, add export here
 export const ClientSchema = SchemaFactory.createForClass(Client);

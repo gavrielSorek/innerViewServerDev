@@ -1,4 +1,3 @@
-// src/clients/dto/create-client.dto.ts
 export class CreateClientDto {
   readonly name: string;
   readonly age: number;
@@ -8,4 +7,5 @@ export class CreateClientDto {
   readonly status: string;
   readonly notes: string;
   readonly openingDate: string;
+  readonly userId: string;
 }
