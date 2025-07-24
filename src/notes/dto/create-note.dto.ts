@@ -1,5 +1,7 @@
 export class CreateNoteDto {
   clientId: string;
-  title: string; // <-- ADD THIS LINE
+  userId: string;
   content: string;
+  createdAt: string; // Included as per your instruction
+  updatedAt: string; // Included as per your instruction
 }

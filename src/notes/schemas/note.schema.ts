@@ -5,11 +5,20 @@ export type NoteDocument = Note & Document;
 
 @Schema()
 export class Note {
-  @Prop()
+  @Prop({ required: true })
   content: string;
 
-  @Prop()
+  @Prop({ required: true })
   clientId: string;
+
+  @Prop({ required: true, index: true })
+  userId: string;
+
+  @Prop() // Explicitly defining createdAt as string
+  createdAt: string;
+
+  @Prop() // Explicitly defining updatedAt as string
+  updatedAt: string;
 }
 
 export const NoteSchema = SchemaFactory.createForClass(Note);
