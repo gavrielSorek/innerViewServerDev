@@ -1,4 +1,5 @@
 export class CreateNoteDto {
-  readonly content: string;
-  readonly clientId: string;
+  clientId: string;
+  title: string; // <-- ADD THIS LINE
+  content: string;
 }
