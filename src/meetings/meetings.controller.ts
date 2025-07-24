@@ -1,3 +1,4 @@
+// file: src/meetings/meetings.controller.ts
 import { Controller, Get, Post, Body, Param, Put, Delete } from '@nestjs/common';
 import { MeetingsService } from './meetings.service';
 import { CreateMeetingDto } from './dto/create-meeting.dto';
@@ -7,27 +8,32 @@ export class MeetingsController {
   constructor(private readonly meetingsService: MeetingsService) {}
 
   @Get()
-  findAll(@Param('clientId') clientId: string) {
-    return this.meetingsService.findAll(clientId);
+  findAll(@Param('userId') userId: string, @Param('clientId') clientId: string) {
+    // Assuming meetingsService.findAll needs userId to scope meetings per user
+    return this.meetingsService.findAll(userId, clientId);
   }
 
   @Get(':id')
-  findOne(@Param('clientId') clientId: string, @Param('id') id: string) {
-    return this.meetingsService.findOne(id, clientId);
+  findOne(@Param('userId') userId: string, @Param('clientId') clientId: string, @Param('id') id: string) {
+    // Assuming meetingsService.findOne needs userId for proper scoping
+    return this.meetingsService.findOne(id, clientId, userId);
   }
 
   @Post()
-  create(@Param('clientId') clientId: string, @Body() createMeetingDto: CreateMeetingDto) {
-    return this.meetingsService.create({ ...createMeetingDto, clientId });
+  create(@Param('userId') userId: string, @Param('clientId') clientId: string, @Body() createMeetingDto: CreateMeetingDto) {
+    // Add both clientId and userId to the DTO before passing to service
+    return this.meetingsService.create({ ...createMeetingDto, clientId, userId });
   }
 
   @Put(':id')
-  update(@Param('clientId') clientId: string, @Param('id') id: string, @Body() updateMeetingDto: CreateMeetingDto) {
-    return this.meetingsService.update(id, { ...updateMeetingDto, clientId });
+  update(@Param('userId') userId: string, @Param('clientId') clientId: string, @Param('id') id: string, @Body() updateMeetingDto: CreateMeetingDto) {
+    // Add both clientId and userId to the DTO before passing to service
+    return this.meetingsService.update(id, { ...updateMeetingDto, clientId, userId });
   }
 
   @Delete(':id')
-  remove(@Param('clientId') clientId: string, @Param('id') id: string) {
-    return this.meetingsService.remove(id, clientId);
+  remove(@Param('userId') userId: string, @Param('clientId') clientId: string, @Param('id') id: string) {
+    // Assuming meetingsService.remove needs userId for proper scoping
+    return this.meetingsService.remove(id, clientId, userId);
   }
 }
