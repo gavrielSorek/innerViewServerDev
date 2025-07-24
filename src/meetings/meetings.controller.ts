@@ -1,9 +1,12 @@
 // file: src/meetings/meetings.controller.ts
-import { Controller, Get, Post, Body, Param, Put, Delete } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Put, Delete, UseGuards } from '@nestjs/common';
 import { MeetingsService } from './meetings.service';
 import { CreateMeetingDto } from './dto/create-meeting.dto';
+import { AuthGuard } from '../auth/auth.guard'; 
 
 @Controller('users/:userId/clients/:clientId/meetings')
+@UseGuards(AuthGuard) // <--- APPLY THE GUARD TO THE ENTIRE CONTROLLER
+
 export class MeetingsController {
   constructor(private readonly meetingsService: MeetingsService) {}
 
