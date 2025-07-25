@@ -6,6 +6,7 @@ import { AppService } from './app.service';
 import { ClientsModule } from './clients/clients.module';
 import { MeetingsModule } from './meetings/meetings.module';
 import { NotesModule } from './notes/notes.module';
+import { PreferencesModule } from './preferences/preferences.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { NotesModule } from './notes/notes.module';
     ClientsModule,
     MeetingsModule,
     NotesModule,
+    PreferencesModule,
   ],
   controllers: [AppController],
   providers: [AppService],
