@@ -1,11 +1,9 @@
 // file: src/preferences/preferences.controller.ts 
-import { Controller, Get, Put, Body, Param, UseGuards, NotFoundException } from '@nestjs/common'; 
+import { Controller, Get, Put, Body, Param, NotFoundException } from '@nestjs/common'; 
 import { PreferencesService } from './preferences.service'; 
 import { UpdatePreferenceDto } from './dto/update-preference.dto'; 
-import { AuthGuard } from '../auth/auth.guard'; 
  
 @Controller('users/:userId/preferences') 
-@UseGuards(AuthGuard) // Apply AuthGuard consistently 
 export class PreferencesController { 
   constructor(private readonly preferencesService: PreferencesService) {} 
  
