@@ -7,6 +7,8 @@ import { ClientsModule } from './clients/clients.module';
 import { MeetingsModule } from './meetings/meetings.module';
 import { NotesModule } from './notes/notes.module';
 import { PreferencesModule } from './preferences/preferences.module';
+import { FuturegraphModule } from './futuregraph/futuregraph.module'; // NEW
+import { AiModule } from './ai/ai.module'; // NEW
 
 @Module({
   imports: [
@@ -22,6 +24,8 @@ import { PreferencesModule } from './preferences/preferences.module';
     MeetingsModule,
     NotesModule,
     PreferencesModule,
+    FuturegraphModule, 
+    AiModule,
   ],
   controllers: [AppController],
   providers: [AppService],
