@@ -14,7 +14,7 @@ import { PreferencesModule } from './preferences/preferences.module';
     MongooseModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: async (configService: ConfigService) => ({
-        uri: configService.get<string>('MONGO_URI'),
+        uri: configService.get('MONGO_URI'),
       }),
       inject: [ConfigService],
     }),

@@ -14,10 +14,10 @@ export class Note {
   @Prop({ required: true, index: true })
   userId: string;
 
-  @Prop() // Explicitly defining createdAt as string
+  @Prop()
   createdAt: string;
 
-  @Prop() // Explicitly defining updatedAt as string
+  @Prop()
   updatedAt: string;
 }
 

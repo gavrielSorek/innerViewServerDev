@@ -1,12 +1,21 @@
-// file: src/meetings/meetings.controller.ts
-import { Controller, Get, Post, Body, Param, Put, Delete, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+  Put,
+  Delete,
+  UseGuards,
+  Patch,
+} from '@nestjs/common';
 import { MeetingsService } from './meetings.service';
 import { CreateMeetingDto } from './dto/create-meeting.dto';
-import { AuthGuard } from '../auth/auth.guard'; 
+import { UpdateMeetingDto } from './dto/update-meeting.dto';
+import { AuthGuard } from '../auth/auth.guard';
 
 @Controller('users/:userId/clients/:clientId/meetings')
-@UseGuards(AuthGuard) // <--- APPLY THE GUARD TO THE ENTIRE CONTROLLER
-
+@UseGuards(AuthGuard)
 export class MeetingsController {
   constructor(private readonly meetingsService: MeetingsService) {}
 
@@ -17,25 +26,56 @@ export class MeetingsController {
   }
 
   @Get(':id')
-  findOne(@Param('userId') userId: string, @Param('clientId') clientId: string, @Param('id') id: string) {
+  findOne(
+    @Param('userId') userId: string,
+    @Param('clientId') clientId: string,
+    @Param('id') id: string,
+  ) {
     // Assuming meetingsService.findOne needs userId for proper scoping
     return this.meetingsService.findOne(id, clientId, userId);
   }
 
   @Post()
-  create(@Param('userId') userId: string, @Param('clientId') clientId: string, @Body() createMeetingDto: CreateMeetingDto) {
+  create(
+    @Param('userId') userId: string,
+    @Param('clientId') clientId: string,
+    @Body() createMeetingDto: CreateMeetingDto,
+  ) {
     // Add both clientId and userId to the DTO before passing to service
     return this.meetingsService.create({ ...createMeetingDto, clientId, userId });
   }
 
   @Put(':id')
-  update(@Param('userId') userId: string, @Param('clientId') clientId: string, @Param('id') id: string, @Body() updateMeetingDto: CreateMeetingDto) {
+  update(
+    @Param('userId') userId: string,
+    @Param('clientId') clientId: string,
+    @Param('id') id: string,
+    @Body() updateMeetingDto: CreateMeetingDto,
+  ) {
     // Add both clientId and userId to the DTO before passing to service
-    return this.meetingsService.update(id, { ...updateMeetingDto, clientId, userId });
+    return this.meetingsService.update(id, { ...updateMeetingDto, clientId, userId } as any);
+  }
+
+  /**
+   * Partially update a meeting.  Accepts a subset of fields defined
+   * in UpdateMeetingDto and scopes the update to the given user and client.
+   */
+  @Patch(':id')
+  partialUpdate(
+    @Param('userId') userId: string,
+    @Param('clientId') clientId: string,
+    @Param('id') id: string,
+    @Body() updateMeetingDto: UpdateMeetingDto,
+  ) {
+    return this.meetingsService.update(id, { ...updateMeetingDto, clientId, userId } as any);
   }
 
   @Delete(':id')
-  remove(@Param('userId') userId: string, @Param('clientId') clientId: string, @Param('id') id: string) {
+  remove(
+    @Param('userId') userId: string,
+    @Param('clientId') clientId: string,
+    @Param('id') id: string,
+  ) {
     // Assuming meetingsService.remove needs userId for proper scoping
     return this.meetingsService.remove(id, clientId, userId);
   }

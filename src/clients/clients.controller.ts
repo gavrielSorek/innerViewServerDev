@@ -1,11 +1,10 @@
 import { Controller, Get, Post, Body, Param, Put, Delete, UseGuards } from '@nestjs/common';
 import { ClientsService } from './clients.service';
 import { CreateClientDto } from './dto/create-client.dto';
-import { AuthGuard } from '../auth/auth.guard'; 
+import { AuthGuard } from '../auth/auth.guard';
 
 @Controller('users/:userId/clients')
-@UseGuards(AuthGuard) // <--- APPLY THE GUARD TO THE ENTIRE CONTROLLER
-
+@UseGuards(AuthGuard)
 export class ClientsController {
   constructor(private readonly clientsService: ClientsService) {}
 
@@ -25,7 +24,11 @@ export class ClientsController {
   }
 
   @Put(':id')
-  update(@Param('userId') userId: string, @Param('id') id: string, @Body() updateClientDto: CreateClientDto) {
+  update(
+    @Param('userId') userId: string,
+    @Param('id') id: string,
+    @Body() updateClientDto: CreateClientDto,
+  ) {
     return this.clientsService.update(id, { ...updateClientDto, userId });
   }
 
