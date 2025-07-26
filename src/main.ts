@@ -4,6 +4,7 @@ dotenv.config();
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import * as admin from 'firebase-admin';
+import * as bodyParser from 'body-parser';
 
 /**
  * Bootstrap the NestJS application.  This function is responsible for
@@ -21,7 +22,6 @@ async function bootstrap() {
     authUri: process.env.FIREBASE_AUTH_URI!,
     tokenUri: process.env.FIREBASE_TOKEN_URI!,
     authProviderX509CertUrl: process.env.FIREBASE_AUTH_PROVIDER_X509_CERT_URL!,
-    // Fixed typo: use clientX509CertUrl instead of clientC509CertUrl
     clientX509CertUrl: process.env.FIREBASE_CLIENT_X509_CERT_URL!,
     universeDomain: process.env.FIREBASE_UNIVERSE_DOMAIN!,
   };
@@ -32,7 +32,15 @@ async function bootstrap() {
     ),
   });
 
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, {
+    bodyParser: false, // Disable the default body parser
+  });
+
+  // Configure body parser with increased limits
+  app.use(bodyParser.json({ limit: '10mb' }));
+  app.use(bodyParser.urlencoded({ limit: '10mb', extended: true }));
+  app.use(bodyParser.raw({ limit: '10mb' }));
+
   app.enableCors();
   const port = process.env.PORT || 3000;
   await app.listen(port);

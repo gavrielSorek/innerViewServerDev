@@ -4,8 +4,8 @@ import * as admin from 'firebase-admin';
 /**
  * Guard that verifies Firebase ID tokens and ensures that the
  * authenticated userId matches the userId present in the route
- * parameters.  Requests that fail these checks will result in an
- * UnauthorizedException.
+ * parameters (when present).  Requests that fail these checks will
+ * result in an UnauthorizedException.
  */
 @Injectable()
 export class AuthGuard implements CanActivate {
@@ -22,18 +22,34 @@ export class AuthGuard implements CanActivate {
       const decodedToken = await admin.auth().verifyIdToken(token);
       // Get the authenticated userId from the token
       const authenticatedUserId = decodedToken.uid;
-      // Get the userId from the URL parameter
+      // Get the userId from the URL parameter (if it exists)
       const requestedUserId = request.params.userId;
-      // Ensure they match
+      
+      // For routes that don't have userId parameter (like /ai/futuregraph/*), 
+      // just verify the token and attach user to request
+      if (!requestedUserId) {
+        request.user = decodedToken;
+        return true;
+      }
+      
+      // For routes with userId parameter, ensure they match
       if (authenticatedUserId !== requestedUserId) {
         throw new UnauthorizedException('You are not authorized to access this resource.');
       }
+      
       // Attach user to the request object if needed for later use
       request.user = decodedToken;
+      return true;
     } catch (error) {
       console.error('Authentication error:', error);
+      
+      // If it's already an UnauthorizedException, rethrow it
+      if (error instanceof UnauthorizedException) {
+        throw error;
+      }
+      
+      // Otherwise, it's likely a token verification error
       throw new UnauthorizedException('Invalid or expired token.');
     }
-    return true;
   }
 }
