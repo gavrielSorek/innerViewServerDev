@@ -1,4 +1,3 @@
-// src/futuregraph/schemas/futuregraph-session.schema.ts
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
 
@@ -7,25 +6,29 @@ export type FuturegraphSessionDocument = FuturegraphSession & Document;
 @Schema()
 export class FuturegraphSession {
   @Prop({ required: true, unique: true })
-  sessionId: string;
+  sessionId!: string;
 
   @Prop({ required: true })
-  userId: string;
+  userId!: string;
 
   @Prop({ required: true })
-  clientId: string;
+  clientId!: string;
 
+  // Base64 encoded handwriting image.
   @Prop({ required: true })
-  handwritingImage: string; // Base64 encoded image
+  handwritingImage!: string;
 
+  // Arbitrary structured context provided at session start.
   @Prop({ type: Object })
-  clientContext: Record<string, any>;
+  clientContext?: Record<string, any>;
 
   @Prop({ required: true })
-  startTime: Date;
+  startTime!: Date;
 
+  // Array of round results.  Each entry contains the AI analysis and
+  // associated metadata.
   @Prop({ type: [Object], default: [] })
-  rounds: Array<{
+  rounds!: Array<{
     roundNumber: number;
     timestamp: Date;
     analysis: any;
@@ -42,8 +45,11 @@ export class FuturegraphSession {
   }>;
 
   @Prop({ default: 0 })
-  currentRound: number;
+  currentRound!: number;
 
   @Prop({ default: 'active' })
-  status: string;
+  status!: string;
 }
+
+export const FuturegraphSessionSchema =
+  SchemaFactory.createForClass(FuturegraphSession);
