@@ -22,7 +22,7 @@ export class AiChatService {
   async getChatResponse(message: string): Promise<string> {
     try {
       const completion = await this.openai.chat.completions.create({
-        model: 'gpt-4',
+        model: 'gpt-4.1-mini',
         messages: [
           {
             role: 'system',
@@ -37,13 +37,35 @@ export class AiChatService {
         temperature: 0.7,
         max_tokens: 500,
       });
-      return (
-        (completion.choices[0].message.content as string) ||
-        'I apologize, but I could not generate a response.'
-      );
+      
+      const responseContent = completion.choices[0]?.message?.content;
+      
+      if (!responseContent) {
+        console.warn('OpenAI returned empty response');
+        return 'I apologize, but I could not generate a response. Please try again.';
+      }
+      
+      return responseContent;
     } catch (error) {
       console.error('Error in AI chat:', error);
-      throw new Error('Failed to get AI response');
+      
+      // Check if it's an OpenAI API error with specific details
+      if (error instanceof Error) {
+        console.error('Error details:', error.message);
+        
+        // You might want to handle specific OpenAI errors differently
+        if (error.message.includes('rate limit')) {
+          return 'I apologize, but the service is currently experiencing high demand. Please try again in a moment.';
+        }
+        
+        if (error.message.includes('API key')) {
+          console.error('OpenAI API key issue detected');
+          return 'I apologize, but there seems to be a configuration issue. Please contact support.';
+        }
+      }
+      
+      // Return a user-friendly message instead of throwing
+      return 'I apologize, but I encountered an issue while processing your request. Please try again.';
     }
   }
 }

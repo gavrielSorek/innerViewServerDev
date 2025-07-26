@@ -39,7 +39,7 @@ export class AiService {
     );
     try {
       const completion = await this.openai.chat.completions.create({
-        model: 'gpt-4-vision-preview',
+        model: "gpt-4o",
         messages: [
           { role: 'system', content: systemPrompt },
           {
