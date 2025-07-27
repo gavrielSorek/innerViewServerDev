@@ -3,21 +3,36 @@ import { ConfigService } from '@nestjs/config';
 import OpenAI from 'openai';
 import { FuturegraphLaws } from './constants/futuregraph-laws';
 import { RoundDefinitions } from './constants/round-definitions';
+import { LanguageService, SupportedLanguage } from '../common/language.service';
 
+/**
+ * Service responsible for interacting with OpenAI to perform the
+ * handwriting analysis for each FutureGraph round.  It constructs
+ * localized prompts according to the requested language and
+ * transparently falls back to English when unsupported codes are
+ * supplied.  All interaction with OpenAI is encapsulated within this
+ * class to allow centralised error handling and prompt management.
+ */
 @Injectable()
 export class AiService {
   private readonly openai: OpenAI;
 
-  constructor(private readonly configService: ConfigService) {
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly languageService: LanguageService,
+  ) {
     this.openai = new OpenAI({
       apiKey: this.configService.get<string>('OPENAI_API_KEY'),
     });
   }
 
   /**
-   * Analyze a single handwriting round.  Constructs system and user
-   * prompts, calls the OpenAI API, and attempts to parse the JSON
-   * result.  Falls back to a raw analysis object if parsing fails.
+   * Analyze a single handwriting round.  The caller must provide the
+   * round number, handwriting image (as base64), client context and any
+   * additional therapist context.  An optional language code dictates
+   * whether prompts and results should be generated in English ("en")
+   * or Hebrew ("he").  Invalid or unsupported codes are silently
+   * normalised to English.
    */
   async analyzeRound(
     roundNumber: number,
@@ -25,9 +40,13 @@ export class AiService {
     clientContext: any,
     additionalContext: any,
     previousRounds: any[],
+    language?: string,
   ): Promise<any> {
-    const systemPrompt = this.createSystemPrompt(roundNumber, previousRounds);
-    const userPrompt = this.createUserPrompt(roundNumber, clientContext, additionalContext);
+    // Validate and normalise the language early
+    const lang: SupportedLanguage = this.languageService.validate(language);
+
+    const systemPrompt = this.createSystemPrompt(roundNumber, previousRounds, lang);
+    const userPrompt = this.createUserPrompt(roundNumber, clientContext, additionalContext, lang);
 
     try {
       const completion = await this.openai.chat.completions.create({
@@ -68,7 +87,7 @@ export class AiService {
         // Fallback structure when parsing fails
         analysis = {
           roundNumber,
-          layer: RoundDefinitions[roundNumber].name,
+          layer: this.languageService.getRoundName(roundNumber, lang),
           rawAnalysis: content,
           qaValidation: {
             passed: false,
@@ -90,112 +109,121 @@ export class AiService {
   /**
    * Build the system prompt containing the FutureGraph laws and guidance
    * for the current round.  Includes previous round summaries when
-   * available to allow the AI to build upon earlier findings.
+   * available to allow the AI to build upon earlier findings.  The
+   * language parameter controls localisation of law names, round names
+   * and certain fixed phrases.  When Hebrew is requested a final
+   * instruction is added prompting the model to respond in Hebrew.
    */
   private createSystemPrompt(
     roundNumber: number,
     previousRounds: any[],
+    language: SupportedLanguage,
   ): string {
-    const round = RoundDefinitions[roundNumber];
-    const previous =
-      previousRounds.length > 0
-        ? `
-PREVIOUS ROUND FINDINGS TO CONSIDER:
-${previousRounds
-            .map(
-              (r: any) => `Round ${r.roundNumber}: ${JSON.stringify(r.analysis)}`
-            )
-            .join('\n')}
-`
-        : '';
+    const roundName = this.languageService.getRoundName(roundNumber, language);
+    const roundFocus = this.languageService.getRoundFocus(roundNumber, language);
 
-    return `You are an AI therapist assistant implementing the FutureGraph™ Pro+ methodology.
-You are currently conducting Round ${roundNumber}: ${round.name}.
-Focus: ${round.focus}
+    // Build previous rounds summary if applicable
+    const previous = previousRounds.length > 0
+      ? `\n${this.languageService.getPhrase('previousFindings', language)}\n${previousRounds
+          .map(
+            (r: any) => `Round ${r.roundNumber}: ${JSON.stringify(r.analysis)}`,
+          )
+          .join('\n')}\n`
+      : '';
 
-CRITICAL LAWS TO FOLLOW:
+    // Build laws list in order.  Sub‑bullet points remain in English as they
+    // reference technical validation instructions.
+    const lawOrder = [
+      'controlledFlexibility',
+      'biDirectionalTime',
+      'oneLayerInfluence',
+      'layerSynchronization',
+      'dynamicIdentityAnchor',
+      'voiceNotMask',
+      'signFlexibility',
+      'syncBeforeTreatment',
+      'securedVoiceDialogue',
+      'interRoundPause',
+      'roundControl',
+    ];
 
-1. ${FuturegraphLaws.controlledFlexibility.name}: ${FuturegraphLaws.controlledFlexibility.description}
-   - Every additional sign must be documented with justification
-   - Signs must align with current round's context
-   - No secondary sign may contradict core indicators
+    let lawsSection = '';
+    lawOrder.forEach((lawKey, idx) => {
+      const name = this.languageService.getLawName(lawKey, language);
+      const desc = this.languageService.getLawDescription(lawKey, language);
+      lawsSection += `${idx + 1}. ${name}: ${desc}\n`;
 
-2. ${FuturegraphLaws.biDirectionalTime.name}: ${FuturegraphLaws.biDirectionalTime.description}
-   - Later insights may revise earlier interpretations within same or adjacent layer
-   - Early findings (Rounds 1-2) serve as interpretive anchors
+      // Add specific bullet points for certain laws only when in English;
+      // for Hebrew we rely on the translated description to convey meaning.
+      if (lawKey === 'controlledFlexibility' && language === 'en') {
+        lawsSection +=
+          '   - Every additional sign must be documented with justification\n' +
+          '   - Signs must align with current round\'s context\n' +
+          '   - No secondary sign may contradict core indicators\n';
+      }
+      if (lawKey === 'biDirectionalTime' && language === 'en') {
+        lawsSection +=
+          '   - Later insights may revise earlier interpretations within same or adjacent layer\n' +
+          '   - Early findings (Rounds 1-2) serve as interpretive anchors\n';
+      }
+      if (lawKey === 'oneLayerInfluence' && language === 'en') {
+        lawsSection +=
+          '   - Exceptions only for: consistent markers, aligned voices, cross-validation\n';
+      }
+    });
 
-3. ${FuturegraphLaws.oneLayerInfluence.name}: ${FuturegraphLaws.oneLayerInfluence.description}
-   - Exceptions only for: consistent markers, aligned voices, cross-validation
+    const intro = this.languageService.getPhrase('systemIntro', language);
+    const analysisStructureHeader = this.languageService.getPhrase('analysisStructure', language);
+    const provideJson = this.languageService.getPhrase('provideJson', language);
 
-4. ${FuturegraphLaws.layerSynchronization.name}: ${FuturegraphLaws.layerSynchronization.description}
+    // Build the full prompt
+    let prompt = `${intro}\nYou are currently conducting Round ${roundNumber}: ${roundName}.\nFocus: ${roundFocus}\n\n` +
+      `CRITICAL LAWS TO FOLLOW:\n\n${lawsSection}\n` +
+      `${analysisStructureHeader}\n` +
+      '1. Identify graphological signs relevant to ' + roundName + '\n' +
+      '2. Connect findings to previous rounds (if applicable)\n' +
+      '3. Apply QA validation to each insight\n' +
+      '4. Document any retroactive influences on earlier layers\n' +
+      '5. Update identity anchors based on new findings\n\n' +
+      previous +
+      `${provideJson}\n` +
+      '{\n' +
+      `  "roundNumber": ${roundNumber},\n` +
+      `  "layer": "${roundName}",\n` +
+      '  "graphologicalSigns": [],\n' +
+      '  "emotionalIndicators": [],\n' +
+      '  "identityAnchors": [],\n' +
+      '  "therapeuticInsights": [],\n' +
+      '  "retroactiveInfluences": [],\n' +
+      '  "qaValidation": {\n' +
+      '    "passed": boolean,\n' +
+      '    "notes": string\n' +
+      '  }\n' +
+      '}';
 
-5. ${FuturegraphLaws.dynamicIdentityAnchor.name}: ${FuturegraphLaws.dynamicIdentityAnchor.description}
-
-6. ${FuturegraphLaws.voiceNotMask.name}: ${FuturegraphLaws.voiceNotMask.description}
-
-7. ${FuturegraphLaws.signFlexibility.name}: ${FuturegraphLaws.signFlexibility.description}
-
-8. ${FuturegraphLaws.syncBeforeTreatment.name}: ${FuturegraphLaws.syncBeforeTreatment.description}
-
-9. ${FuturegraphLaws.securedVoiceDialogue.name}: ${FuturegraphLaws.securedVoiceDialogue.description}
-
-10. ${FuturegraphLaws.interRoundPause.name}: ${FuturegraphLaws.interRoundPause.description}
-
-11. ${FuturegraphLaws.roundControl.name}: ${FuturegraphLaws.roundControl.description}
-
-ANALYSIS STRUCTURE FOR THIS ROUND:
-1. Identify graphological signs relevant to ${round.name}
-2. Connect findings to previous rounds (if applicable)
-3. Apply QA validation to each insight
-4. Document any retroactive influences on earlier layers
-5. Update identity anchors based on new findings
-
-${previous}
-
-Provide your analysis in JSON format with the following structure:
-{
-  "roundNumber": ${roundNumber},
-  "layer": "${round.name}",
-  "graphologicalSigns": [
-    {
-      "sign": "description",
-      "location": "where in handwriting",
-      "interpretation": "meaning",
-      "justification": "why included",
-      "therapeuticRelevance": "clinical significance"
+    // If Hebrew is requested, explicitly instruct the model to respond in Hebrew
+    if (language === 'he') {
+      prompt += `\n\n${this.languageService.getPhrase('respondInLanguage', language)}`;
     }
-  ],
-  "emotionalIndicators": [],
-  "identityAnchors": [],
-  "therapeuticInsights": [],
-  "retroactiveInfluences": [
-    {
-      "targetRound": number,
-      "influence": "description",
-      "validation": "how it meets one-layer constraint"
-    }
-  ],
-  "qaValidation": {
-    "passed": boolean,
-    "notes": "validation details"
-  }
-}`;
+    return prompt;
   }
 
   /**
-   * Build a user-facing prompt summarising the client context, any
-   * additional therapist context, and instructing the AI to analyse the
-   * handwriting for the specified round.
+   * Build a user-facing prompt summarising the client context and any
+   * therapist context, instructing the AI to analyse the handwriting
+   * sample for the specified round.  The text is localised using the
+   * LanguageService.
    */
   private createUserPrompt(
     roundNumber: number,
     clientContext: any,
     additionalContext: any,
+    language: SupportedLanguage,
   ): string {
-    return `Analyze this handwriting sample for Round ${roundNumber}.
-Client Context: ${JSON.stringify(clientContext)}
-Additional Context: ${JSON.stringify(additionalContext)}
-
-Apply all FutureGraph™ Pro+ laws and provide detailed analysis focusing on the ${RoundDefinitions[roundNumber].name} layer.`;
+    const roundName = this.languageService.getRoundName(roundNumber, language);
+    return `${this.languageService.getPhrase('analyzePrompt', language)} ${roundNumber}.\n` +
+      `${this.languageService.getPhrase('clientContext', language)}: ${JSON.stringify(clientContext)}\n` +
+      `${this.languageService.getPhrase('additionalContext', language)}: ${JSON.stringify(additionalContext)}\n\n` +
+      `${this.languageService.getPhrase('applyLaws', language)} ${roundName} ${this.languageService.getPhrase('layer', language)}`;
   }
 }

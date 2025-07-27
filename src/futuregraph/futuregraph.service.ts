@@ -1,6 +1,9 @@
 // Service implementing the FutureGraph analysis workflow.  Handles
 // session creation, round processing, validation against the FutureGraph
-// laws, and final report generation.
+// laws, and final report generation.  This version has been updated
+// to support localisation of prompts and reports (currently English
+// and Hebrew) via the LanguageService.
+
 import {
   Injectable,
   NotFoundException,
@@ -18,6 +21,7 @@ import { ProcessRoundDto } from './dto/process-round.dto';
 import { SubmitFeedbackDto } from './dto/submit-feedback.dto';
 import { FuturegraphLaws } from './constants/futuregraph-laws';
 import { RoundDefinitions } from './constants/round-definitions';
+import { LanguageService, SupportedLanguage } from '../common/language.service';
 
 @Injectable()
 export class FuturegraphService {
@@ -25,16 +29,19 @@ export class FuturegraphService {
     @InjectModel(FuturegraphSession.name)
     private readonly sessionModel: Model<FuturegraphSessionDocument>,
     private readonly aiService: AiService,
+    private readonly languageService: LanguageService,
   ) {}
 
   /**
    * Create a new analysis session in the database.  Generates a unique
-   * identifier and persists the session record.
+   * identifier and persists the session record.  Accepts an optional
+   * language preference; if omitted or invalid, defaults to English.
    */
   async startSession(dto: StartSessionDto): Promise<string> {
     const sessionId = `fg_${Date.now()}_${Math.random()
       .toString(36)
       .substr(2, 9)}`;
+    const language: SupportedLanguage = this.languageService.validate(dto.language);
     const session = new this.sessionModel({
       sessionId,
       userId: dto.userId,
@@ -45,6 +52,7 @@ export class FuturegraphService {
       rounds: [],
       currentRound: 0,
       status: 'active',
+      language,
     });
     await session.save();
     return sessionId;
@@ -53,7 +61,9 @@ export class FuturegraphService {
   /**
    * Process a single analysis round.  This enforces round ordering,
    * invokes the AI analysis, validates the result against the laws, and
-   * stores the resulting round on the session.
+   * stores the resulting round on the session.  The language for the
+   * round is determined by the incoming DTO (if provided) or falls back
+   * to the session's stored language.
    */
   async processRound(
     dto: ProcessRoundDto,
@@ -77,6 +87,16 @@ export class FuturegraphService {
     // Validate according to FutureGraph laws
     this.validateRoundProgression(session, dto.roundNumber);
 
+    // Normalise language: prefer incoming value, else session value
+    const lang: SupportedLanguage = dto.language
+      ? this.languageService.validate(dto.language)
+      : (session.language as SupportedLanguage) || 'en';
+
+    // Update session language if a different one was provided
+    if (dto.language && dto.language !== session.language) {
+      session.language = lang;
+    }
+
     // Invoke the AI analysis for this round
     const analysis = await this.aiService.analyzeRound(
       dto.roundNumber,
@@ -84,10 +104,11 @@ export class FuturegraphService {
       session.clientContext,
       dto.additionalContext,
       session.rounds,
+      lang,
     );
 
     // Apply QA validation against the FutureGraph laws
-    const validation = this.validateAnalysis(analysis, session);
+    const validation = this.validateAnalysis(analysis, session, lang);
     analysis.qaValidation = validation;
 
     // Persist the round
@@ -154,7 +175,8 @@ export class FuturegraphService {
 
   /**
    * Generate a final analysis report once all rounds have been completed
-   * and approved.  Throws an error if the session is incomplete.
+   * and approved.  Throws an error if the session is incomplete.  The
+   * report contents are localised using the session's language.
    */
   async generateReport(sessionId: string): Promise<any> {
     const session = await this.sessionModel
@@ -171,23 +193,26 @@ export class FuturegraphService {
         `All rounds must be completed before generating report. Completed: ${completedRounds}/10`,
       );
     }
+    const lang: SupportedLanguage = session.language as SupportedLanguage;
     return {
       sessionId: session.sessionId,
       clientId: session.clientId,
       generatedAt: new Date(),
-      executiveSummary: this.generateExecutiveSummary(session),
-      detailedFindings: this.generateDetailedFindings(session),
+      executiveSummary: this.generateExecutiveSummary(session, lang),
+      detailedFindings: this.generateDetailedFindings(session, lang),
       treatmentRecommendations:
-        this.generateTreatmentRecommendations(session),
-      therapeuticContract: this.generateTherapeuticContract(session),
-      identityEvolution: this.trackIdentityEvolution(session),
-      voiceMaskAnalysis: this.analyzeVoicesAndMasks(session),
+        this.generateTreatmentRecommendations(session, lang),
+      therapeuticContract: this.generateTherapeuticContract(session, lang),
+      identityEvolution: this.trackIdentityEvolution(session, lang),
+      voiceMaskAnalysis: this.analyzeVoicesAndMasks(session, lang),
     };
   }
 
   /**
    * Record therapist feedback for a given round.  Marks the round as
    * approved or rejected and sets flags for reprocessing if needed.
+   * Accepts an optional language override which updates the session
+   * language for subsequent rounds.
    */
   async submitFeedback(
     dto: SubmitFeedbackDto,
@@ -211,6 +236,12 @@ export class FuturegraphService {
     if (!dto.approved) {
       round.requiresReprocessing = true;
     }
+
+    // Update language on feedback if provided
+    if (dto.language) {
+      session.language = this.languageService.validate(dto.language);
+    }
+
     await session.save();
     return {
       success: true,
@@ -255,11 +286,13 @@ export class FuturegraphService {
   /**
    * Validate the AI output against the FutureGraph laws and return a
    * structured object containing pass/fail information along with any
-   * violations or warnings.  This method does not mutate the session.
+   * violations or warnings.  This method does not mutate the session and
+   * localises the violation messages.
    */
   private validateAnalysis(
     analysis: any,
     session: FuturegraphSessionDocument,
+    language: SupportedLanguage,
   ): {
     passed: boolean;
     violations: string[];
@@ -282,7 +315,7 @@ export class FuturegraphService {
           if (!hasException) {
             validationResults.passed = false;
             validationResults.violations.push(
-              `One-Layer Influence violated: Round ${analysis.roundNumber} attempting to influence Round ${influence.targetRound}`,
+              `${this.languageService.getPhrase('oneLayerViolation', language)}: Round ${analysis.roundNumber} → Round ${influence.targetRound}`,
             );
           }
         }
@@ -294,24 +327,21 @@ export class FuturegraphService {
         (sign: any, index: number) => {
           if (!sign.justification || !sign.therapeuticRelevance) {
             validationResults.warnings.push(
-              `Sign ${index + 1} missing required justification or therapeutic relevance`,
+              `Sign ${index + 1} ${this.languageService.getPhrase('missingJustification', language)}`,
             );
           }
         },
       );
     }
     // Voice ≠ Mask for rounds 7–8
-    if (
-      analysis.roundNumber === 7 ||
-      analysis.roundNumber === 8
-    ) {
+    if (analysis.roundNumber === 7 || analysis.roundNumber === 8) {
       if (analysis.voices && analysis.masks) {
         const overlap = analysis.voices.filter((voice: any) =>
           analysis.masks.some((mask: any) => mask.id === voice.id),
         );
         if (overlap.length > 0) {
           validationResults.violations.push(
-            `Voice ≠ Mask principle violated: Found ${overlap.length} overlapping identifications`,
+            `${this.languageService.getPhrase('voiceMaskViolation', language)} ${overlap.length} overlapping identifications`,
           );
           validationResults.passed = false;
         }
@@ -322,9 +352,13 @@ export class FuturegraphService {
 
   /**
    * Build a high‑level summary capturing the key narrative arcs from
-   * visible layer through to treatment recommendations.
+   * visible layer through to treatment recommendations.  Localises the
+   * summary using the provided language.
    */
-  private generateExecutiveSummary(session: FuturegraphSessionDocument): string {
+  private generateExecutiveSummary(
+    session: FuturegraphSessionDocument,
+    language: SupportedLanguage,
+  ): string {
     const visibleLayer = session.rounds.find(
       (r) => r.roundNumber === 1,
     )?.analysis;
@@ -334,28 +368,38 @@ export class FuturegraphService {
     const treatment = session.rounds.find(
       (r) => r.roundNumber === 10,
     )?.analysis;
-    return `Based on comprehensive FutureGraph™ Pro+ analysis across 10 diagnostic rounds, \
-the client presents with ${
-      visibleLayer?.graphologicalSigns?.[0]?.interpretation || 'complex patterns'
-    } at the visible layer, evolving to ${
-      rootLayer?.identityAnchors?.[0] ||
-      'deep-seated identity structures'
-    } at the root level. Primary treatment recommendations include ${
-      treatment?.therapeuticInsights?.[0] || 'targeted interventions'
+    const intro = this.languageService.getPhrase('executiveSummaryIntro', language);
+    const evolving = this.languageService.getPhrase('executiveSummaryEvolving', language);
+    const recommendation = this.languageService.getPhrase('executiveSummaryRecommendation', language);
+    const defaultVisible = this.languageService.getPhrase('complexPatterns', language);
+    const defaultRoot = this.languageService.getPhrase('deepSeatedIdentity', language);
+    const defaultTreatment = this.languageService.getPhrase('targetedInterventions', language);
+    return `${intro} ${
+      visibleLayer?.graphologicalSigns?.[0]?.interpretation || defaultVisible
+    } ${evolving} ${
+      rootLayer?.identityAnchors?.[0] || defaultRoot
+    }. ${recommendation} ${
+      treatment?.therapeuticInsights?.[0] || defaultTreatment
     }.`;
   }
 
   /**
    * Produce a dictionary of findings keyed by round name.  Each entry
    * exposes the signs, emotional indicators, therapeutic insights and
-   * retroactive influences for that round.
+   * retroactive influences for that round.  The round names are
+   * localised for readability.
    */
-  private generateDetailedFindings(session: FuturegraphSessionDocument): Record<string, any> {
+  private generateDetailedFindings(
+    session: FuturegraphSessionDocument,
+    language: SupportedLanguage,
+  ): Record<string, any> {
     const findings: Record<string, any> = {};
     session.rounds.forEach((round: any) => {
-      findings[
-        `Round ${round.roundNumber}: ${RoundDefinitions[round.roundNumber].name}`
-      ] = {
+      const roundName = this.languageService.getRoundName(
+        round.roundNumber,
+        language,
+      );
+      findings[`Round ${round.roundNumber}: ${roundName}`] = {
         graphologicalSigns: round.analysis.graphologicalSigns,
         emotionalIndicators: round.analysis.emotionalIndicators,
         therapeuticInsights: round.analysis.therapeuticInsights,
@@ -368,30 +412,32 @@ the client presents with ${
   /**
    * Assemble an array of treatment recommendations based on the final
    * treatment round and optionally augment with voice and mask guidance.
+   * Currently not localised as recommendations are free‑form text
+   * produced by the AI.
    */
   private generateTreatmentRecommendations(
     session: FuturegraphSessionDocument,
+    language: SupportedLanguage,
   ): string[] {
     const treatmentRound = session.rounds.find(
       (r) => r.roundNumber === 10,
     );
     const recommendations =
-      (treatmentRound?.analysis.therapeuticInsights as string[]) ||
-      [];
-    const voiceRound = session.rounds.find(
-      (r) => r.roundNumber === 7,
-    );
-    const maskRound = session.rounds.find(
-      (r) => r.roundNumber === 8,
-    );
+      (treatmentRound?.analysis.therapeuticInsights as string[]) || [];
+    const voiceRound = session.rounds.find((r) => r.roundNumber === 7);
+    const maskRound = session.rounds.find((r) => r.roundNumber === 8);
     if (voiceRound?.analysis.voices?.length > 0) {
       recommendations.push(
-        'Voice dialogue work to integrate internal parts',
+        language === 'he'
+          ? 'עבודת דיאלוג קול לשילוב חלקים פנימיים'
+          : 'Voice dialogue work to integrate internal parts',
       );
     }
     if (maskRound?.analysis.masks?.length > 0) {
       recommendations.push(
-        'Exploration of defense mechanisms and authentic self',
+        language === 'he'
+          ? 'חקר מנגנוני הגנה והעצמי האותנטי'
+          : 'Exploration of defense mechanisms and authentic self',
       );
     }
     return recommendations;
@@ -400,31 +446,35 @@ the client presents with ${
   /**
    * Create a therapeutic contract skeleton outlining goals, approach,
    * timeline and focus areas derived from the integration and root rounds.
+   * Localises only the static portion of the contract; the dynamic
+   * insights remain as generated by the AI.
    */
   private generateTherapeuticContract(
     session: FuturegraphSessionDocument,
+    language: SupportedLanguage,
   ): {
     goals: any[];
     approach: string;
     timeline: string;
     focusAreas: any[];
   } {
-    const integrationRound = session.rounds.find(
-      (r) => r.roundNumber === 9,
-    );
-    const rootLayer = session.rounds.find(
-      (r) => r.roundNumber === 6,
-    );
+    const integrationRound = session.rounds.find((r) => r.roundNumber === 9);
+    const rootLayer = session.rounds.find((r) => r.roundNumber === 6);
     return {
-      goals:
-        (integrationRound?.analysis.therapeuticInsights as any[]) ?? [
-          'To be determined in collaboration with client',
-        ],
-      approach: 'Integrative approach based on FutureGraph™ Pro+ findings',
+      goals: (integrationRound?.analysis.therapeuticInsights as any[]) ?? [
+        language === 'he'
+          ? 'להיקבע בשיתוף עם המטופל'
+          : 'To be determined in collaboration with client',
+      ],
+      approach:
+        language === 'he'
+          ? 'גישת אינטגרציה המבוססת על ממצאי FutureGraph™ Pro+'
+          : 'Integrative approach based on FutureGraph™ Pro+ findings',
       timeline:
-        'Recommended 12-16 sessions with progress reviews every 4 sessions',
-      focusAreas:
-        (rootLayer?.analysis.identityAnchors as any[]) ?? [],
+        language === 'he'
+          ? 'מומלצות 12–16 מפגשים עם ביקורות התקדמות כל 4 מפגשים'
+          : 'Recommended 12-16 sessions with progress reviews every 4 sessions',
+      focusAreas: (rootLayer?.analysis.identityAnchors as any[]) ?? [],
     };
   }
 
@@ -433,17 +483,17 @@ the client presents with ${
    */
   private trackIdentityEvolution(
     session: FuturegraphSessionDocument,
+    language: SupportedLanguage,
   ): Array<{ round: number; layer: string; anchors: any[] }> {
-    const evolution: Array<{ round: number; layer: string; anchors: any[] }> =
-      [];
+    // Build an array tracking how identity anchors evolve across rounds.
+    // Use the LanguageService to localise the layer name so that the
+    // evolution timeline appears in the client’s preferred language.
+    const evolution: Array<{ round: number; layer: string; anchors: any[] }> = [];
     session.rounds.forEach((round: any) => {
-      if (
-        round.analysis.identityAnchors &&
-        round.analysis.identityAnchors.length > 0
-      ) {
+      if (round.analysis.identityAnchors && round.analysis.identityAnchors.length > 0) {
         evolution.push({
           round: round.roundNumber,
-          layer: RoundDefinitions[round.roundNumber].name,
+          layer: this.languageService.getRoundName(round.roundNumber, language),
           anchors: round.analysis.identityAnchors,
         });
       }
@@ -456,22 +506,18 @@ the client presents with ${
    */
   private analyzeVoicesAndMasks(
     session: FuturegraphSessionDocument,
+    language: SupportedLanguage,
   ): {
     internalVoices: any[];
     defenseMechanisms: any[];
     integration: string;
   } {
-    const voiceRound = session.rounds.find(
-      (r) => r.roundNumber === 7,
-    );
-    const maskRound = session.rounds.find(
-      (r) => r.roundNumber === 8,
-    );
+    const voiceRound = session.rounds.find((r) => r.roundNumber === 7);
+    const maskRound = session.rounds.find((r) => r.roundNumber === 8);
     return {
       internalVoices: voiceRound?.analysis.voices || [],
       defenseMechanisms: maskRound?.analysis.masks || [],
-      integration:
-        'Analysis of how voices and masks interact to form current personality structure',
+      integration: this.languageService.getPhrase('voiceMaskIntegration', language),
     };
   }
 }
