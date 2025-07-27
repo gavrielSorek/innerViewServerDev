@@ -1,6 +1,3 @@
-// AI service responsible for constructing prompts and invoking the
-// OpenAI API to perform handwriting analysis for each round.  The
-// service converts images to data URLs and enforces prompt structure.
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import OpenAI from 'openai';
@@ -10,6 +7,7 @@ import { RoundDefinitions } from './constants/round-definitions';
 @Injectable()
 export class AiService {
   private readonly openai: OpenAI;
+
   constructor(private readonly configService: ConfigService) {
     this.openai = new OpenAI({
       apiKey: this.configService.get<string>('OPENAI_API_KEY'),
@@ -28,18 +26,12 @@ export class AiService {
     additionalContext: any,
     previousRounds: any[],
   ): Promise<any> {
-    const systemPrompt = this.createSystemPrompt(
-      roundNumber,
-      previousRounds,
-    );
-    const userPrompt = this.createUserPrompt(
-      roundNumber,
-      clientContext,
-      additionalContext,
-    );
+    const systemPrompt = this.createSystemPrompt(roundNumber, previousRounds);
+    const userPrompt = this.createUserPrompt(roundNumber, clientContext, additionalContext);
+
     try {
       const completion = await this.openai.chat.completions.create({
-        model: "gpt-4o",
+        model: 'gpt-4o',
         messages: [
           { role: 'system', content: systemPrompt },
           {
@@ -58,26 +50,38 @@ export class AiService {
         temperature: 0.7,
         max_tokens: 2000,
       });
+
+      let content = (completion.choices[0].message.content as string)?.trim() ?? '';
+
+      // 🧹 Remove markdown-style wrapping (```json ... ```) if present
+      if (content.startsWith('```json')) {
+        content = content.replace(/^```json/, '').trim();
+      }
+      if (content.endsWith('```')) {
+        content = content.slice(0, -3).trim();
+      }
+
       let analysis: any;
       try {
-        analysis = JSON.parse(
-          completion.choices[0].message.content as string,
-        );
+        analysis = JSON.parse(content);
       } catch {
-        // Provide a default structure if parsing fails.
+        // Fallback structure when parsing fails
         analysis = {
           roundNumber,
           layer: RoundDefinitions[roundNumber].name,
-          rawAnalysis: completion.choices[0].message.content,
+          rawAnalysis: content,
           qaValidation: {
             passed: false,
             notes: 'Failed to parse structured response',
           },
         };
+        return analysis;
       }
+
+      // Attach cleaned rawAnalysis for traceability
+      analysis.rawAnalysis = content;
       return analysis;
     } catch (error) {
-      // Surface the error to the caller.
       console.error('Error calling OpenAI:', error);
       throw error;
     }
@@ -98,13 +102,13 @@ export class AiService {
         ? `
 PREVIOUS ROUND FINDINGS TO CONSIDER:
 ${previousRounds
-  .map(
-    (r: any) =>
-      `Round ${r.roundNumber}: ${JSON.stringify(r.analysis)}`,
-  )
-  .join('\n')}
+            .map(
+              (r: any) => `Round ${r.roundNumber}: ${JSON.stringify(r.analysis)}`
+            )
+            .join('\n')}
 `
         : '';
+
     return `You are an AI therapist assistant implementing the FutureGraph™ Pro+ methodology.
 You are currently conducting Round ${roundNumber}: ${round.name}.
 Focus: ${round.focus}
@@ -192,8 +196,6 @@ Provide your analysis in JSON format with the following structure:
 Client Context: ${JSON.stringify(clientContext)}
 Additional Context: ${JSON.stringify(additionalContext)}
 
-Apply all FutureGraph™ Pro+ laws and provide detailed analysis focusing on the ${
-      RoundDefinitions[roundNumber].name
-    } layer.`;
+Apply all FutureGraph™ Pro+ laws and provide detailed analysis focusing on the ${RoundDefinitions[roundNumber].name} layer.`;
   }
 }
