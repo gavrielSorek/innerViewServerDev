@@ -1,6 +1,4 @@
-// Controller responsible for exposing REST endpoints for the FutureGraph
-// analysis workflow.  All routes are protected by the AuthGuard to ensure
-// only authenticated therapists can initiate or process sessions.
+// src/futuregraph/futuregraph.controller.ts
 import {
   Controller,
   Get,
@@ -8,12 +6,11 @@ import {
   Body,
   Param,
   UseGuards,
+  Query,
 } from '@nestjs/common';
 import { FuturegraphService } from './futuregraph.service';
 import { AuthGuard } from '../auth/auth.guard';
 import { StartSessionDto } from './dto/start-session.dto';
-import { ProcessRoundDto } from './dto/process-round.dto';
-import { SubmitFeedbackDto } from './dto/submit-feedback.dto';
 
 @Controller('ai/futuregraph')
 @UseGuards(AuthGuard)
@@ -21,49 +18,88 @@ export class FuturegraphController {
   constructor(private readonly futuregraphService: FuturegraphService) {}
 
   /**
-   * Create a new analysis session.  Returns a unique sessionId that must
-   * be passed to subsequent round-processing calls.
+   * Start and complete analysis in a single operation.
+   * Returns the sessionId, complete analysis, and report.
+   */
+  @Post('analyze')
+  async analyze(@Body() startSessionDto: StartSessionDto) {
+    const result = await this.futuregraphService.startAndCompleteAnalysis(startSessionDto);
+    return {
+      sessionId: result.sessionId,
+      status: 'completed',
+      analysis: result.analysis,
+      report: result.report,
+    };
+  }
+
+  /**
+   * Retrieve a completed analysis session including the handwriting image.
+   * This endpoint allows retrieval of stored analyses with their images.
+   */
+  @Get('session/:sessionId')
+  async getSession(@Param('sessionId') sessionId: string) {
+    const result = await this.futuregraphService.getAnalysisSession(sessionId);
+    return {
+      sessionId: result.session.sessionId,
+      clientId: result.session.clientId,
+      createdAt: result.session.startTime,
+      completedAt: result.session.completedAt,
+      language: result.session.language,
+      status: result.session.status,
+      handwritingImage: result.handwritingImage,
+      analysis: result.analysis,
+      report: result.report,
+    };
+  }
+
+  /**
+   * Get all analysis sessions for a specific client.
+   * Returns a list of session summaries without the full analysis data.
+   */
+  @Get('client/:clientId')
+  async getClientAnalyses(
+    @Param('clientId') clientId: string,
+    @Query('userId') userId: string,
+  ) {
+    const sessions = await this.futuregraphService.getClientAnalyses(clientId, userId);
+    return {
+      clientId,
+      sessions,
+      total: sessions.length,
+    };
+  }
+
+  /**
+   * Legacy endpoints for backward compatibility - redirect to new flow
    */
   @Post('start-session')
   async startSession(@Body() startSessionDto: StartSessionDto) {
-    const sessionId = await this.futuregraphService.startSession(startSessionDto);
-    return { sessionId, status: 'Session created successfully' };
+    // Redirect to new single-round analysis
+    return this.analyze(startSessionDto);
   }
 
-  /**
-   * Process a single round of analysis.  This validates the round order,
-   * invokes the AI model, and persists the results.  The therapist must
-   * subsequently approve or reject the round using the feedback endpoint.
-   */
   @Post('process-round')
-  async processRound(@Body() processRoundDto: ProcessRoundDto) {
-    return this.futuregraphService.processRound(processRoundDto);
+  async processRound() {
+    return {
+      message: 'This endpoint is deprecated. Use POST /ai/futuregraph/analyze instead.',
+      deprecated: true,
+    };
   }
 
-  /**
-   * Retrieve the current status of a session, including which rounds have
-   * been completed and which require therapist approval.
-   */
   @Get('status/:sessionId')
   async getStatus(@Param('sessionId') sessionId: string) {
-    return this.futuregraphService.getSessionStatus(sessionId);
+    // Redirect to get session endpoint
+    const result = await this.futuregraphService.getAnalysisSession(sessionId);
+    return {
+      sessionId: result.session.sessionId,
+      status: result.session.status,
+      isComplete: result.session.status === 'completed',
+    };
   }
 
-  /**
-   * Generate the final report for a completed session.  All ten rounds must
-   * be completed and approved before this endpoint will succeed.
-   */
   @Get('report/:sessionId')
   async getReport(@Param('sessionId') sessionId: string) {
-    return this.futuregraphService.generateReport(sessionId);
-  }
-
-  /**
-   * Submit therapist feedback for a specific round.  This marks the round
-   * as approved or rejected and optionally records free‑form feedback.
-   */
-  @Post('feedback')
-  async submitFeedback(@Body() submitFeedbackDto: SubmitFeedbackDto) {
-    return this.futuregraphService.submitFeedback(submitFeedbackDto);
+    const result = await this.futuregraphService.getAnalysisSession(sessionId);
+    return result.report;
   }
 }

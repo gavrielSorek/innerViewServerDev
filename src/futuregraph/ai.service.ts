@@ -1,18 +1,9 @@
+// src/futuregraph/ai.service.ts
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import OpenAI from 'openai';
-import { FuturegraphLaws } from './constants/futuregraph-laws';
-import { RoundDefinitions } from './constants/round-definitions';
 import { LanguageService, SupportedLanguage } from '../common/language.service';
 
-/**
- * Service responsible for interacting with OpenAI to perform the
- * handwriting analysis for each FutureGraph round.  It constructs
- * localized prompts according to the requested language and
- * transparently falls back to English when unsupported codes are
- * supplied.  All interaction with OpenAI is encapsulated within this
- * class to allow centralised error handling and prompt management.
- */
 @Injectable()
 export class AiService {
   private readonly openai: OpenAI;
@@ -27,26 +18,17 @@ export class AiService {
   }
 
   /**
-   * Analyze a single handwriting round.  The caller must provide the
-   * round number, handwriting image (as base64), client context and any
-   * additional therapist context.  An optional language code dictates
-   * whether prompts and results should be generated in English ("en")
-   * or Hebrew ("he").  Invalid or unsupported codes are silently
-   * normalised to English.
+   * Perform complete FutureGraph analysis in a single round.
+   * Implements all analysis layers as specified in the FutureGraph™ Pro+ instructions.
    */
-  async analyzeRound(
-    roundNumber: number,
+  async analyzeComplete(
     handwritingImage: string,
     clientContext: any,
     additionalContext: any,
-    previousRounds: any[],
-    language?: string,
+    language: SupportedLanguage,
   ): Promise<any> {
-    // Validate and normalise the language early
-    const lang: SupportedLanguage = this.languageService.validate(language);
-
-    const systemPrompt = this.createSystemPrompt(roundNumber, previousRounds, lang);
-    const userPrompt = this.createUserPrompt(roundNumber, clientContext, additionalContext, lang);
+    const systemPrompt = this.createCompleteSystemPrompt(language);
+    const userPrompt = this.createCompleteUserPrompt(clientContext, additionalContext, language);
 
     try {
       const completion = await this.openai.chat.completions.create({
@@ -67,12 +49,12 @@ export class AiService {
           },
         ],
         temperature: 0.7,
-        max_tokens: 2000,
+        max_tokens: 4000, // Increased for comprehensive analysis
       });
 
       let content = (completion.choices[0].message.content as string)?.trim() ?? '';
 
-      // 🧹 Remove markdown-style wrapping (```json ... ```) if present
+      // Remove markdown wrapping if present
       if (content.startsWith('```json')) {
         content = content.replace(/^```json/, '').trim();
       }
@@ -86,19 +68,11 @@ export class AiService {
       } catch {
         // Fallback structure when parsing fails
         analysis = {
-          roundNumber,
-          layer: this.languageService.getRoundName(roundNumber, lang),
           rawAnalysis: content,
-          qaValidation: {
-            passed: false,
-            notes: 'Failed to parse structured response',
-          },
+          error: 'Failed to parse structured response',
         };
-        return analysis;
       }
 
-      // Attach cleaned rawAnalysis for traceability
-      analysis.rawAnalysis = content;
       return analysis;
     } catch (error) {
       console.error('Error calling OpenAI:', error);
@@ -107,123 +81,123 @@ export class AiService {
   }
 
   /**
-   * Build the system prompt containing the FutureGraph laws and guidance
-   * for the current round.  Includes previous round summaries when
-   * available to allow the AI to build upon earlier findings.  The
-   * language parameter controls localisation of law names, round names
-   * and certain fixed phrases.  When Hebrew is requested a final
-   * instruction is added prompting the model to respond in Hebrew.
+   * Create system prompt for complete FutureGraph analysis
    */
-  private createSystemPrompt(
-    roundNumber: number,
-    previousRounds: any[],
-    language: SupportedLanguage,
-  ): string {
-    const roundName = this.languageService.getRoundName(roundNumber, language);
-    const roundFocus = this.languageService.getRoundFocus(roundNumber, language);
+  private createCompleteSystemPrompt(language: SupportedLanguage): string {
+    const intro = language === 'he'
+      ? `אתה מומחה למודל FutureGraph™ Pro+ Expert, בגרסת הפעלה הוליסטית-שיקופית, המתמקד בזהות תודעתית-רגשית עמוקה. מטרת העל שלך היא לחשוף, לשקף ולנסח את הזהות הפנימית של האדם מתוך כתב יד, באמצעות ניתוח רב-שכבתי.`
+      : `You are an expert in the FutureGraph™ Pro+ Expert model, holistic-reflective version, focusing on deep conscious-emotional identity. Your goal is to reveal, reflect and articulate the person's inner identity from handwriting through multi-layered analysis.`;
 
-    // Build previous rounds summary if applicable
-    const previous = previousRounds.length > 0
-      ? `\n${this.languageService.getPhrase('previousFindings', language)}\n${previousRounds
-          .map(
-            (r: any) => `Round ${r.roundNumber}: ${JSON.stringify(r.analysis)}`,
-          )
-          .join('\n')}\n`
-      : '';
+    const instructions = language === 'he'
+      ? `
+בצע ניתוח מקיף של כתב היד בסבב אחד, הכולל את כל השכבות הבאות:
 
-    // Build laws list in order.  Sub‑bullet points remain in English as they
-    // reference technical validation instructions.
-    const lawOrder = [
-      'controlledFlexibility',
-      'biDirectionalTime',
-      'oneLayerInfluence',
-      'layerSynchronization',
-      'dynamicIdentityAnchor',
-      'voiceNotMask',
-      'signFlexibility',
-      'syncBeforeTreatment',
-      'securedVoiceDialogue',
-      'interRoundPause',
-      'roundControl',
-    ];
+1. **זהות מרכזית (Core Identity)**: זהה את חתימת הזהות המרכזית של הכותב
+2. **שכבות אישיות**: נתח את השכבות הגלויות, המודעות, התת-מודעות והנסתרות
+3. **מסכות הגנה**: זהה את מנגנוני ההגנה העיקריים
+4. **חוזים פנימיים**: מפה את מערכת החוזים הפנימיים
+5. **אמונות מגבילות**: זהה את האמונות המגבילות הפועלות כבסיס זהותי
+6. **המלצות טיפוליות**: ספק המלצות מבוססות על הניתוח
 
-    let lawsSection = '';
-    lawOrder.forEach((lawKey, idx) => {
-      const name = this.languageService.getLawName(lawKey, language);
-      const desc = this.languageService.getLawDescription(lawKey, language);
-      lawsSection += `${idx + 1}. ${name}: ${desc}\n`;
+השתמש בשפה פשוטה, רגשית, אנושית ומובנת. הימנע ממונחים טכניים. השתמש בדימויים אנושיים מחיי היומיום.
 
-      // Add specific bullet points for certain laws only when in English;
-      // for Hebrew we rely on the translated description to convey meaning.
-      if (lawKey === 'controlledFlexibility' && language === 'en') {
-        lawsSection +=
-          '   - Every additional sign must be documented with justification\n' +
-          '   - Signs must align with current round\'s context\n' +
-          '   - No secondary sign may contradict core indicators\n';
-      }
-      if (lawKey === 'biDirectionalTime' && language === 'en') {
-        lawsSection +=
-          '   - Later insights may revise earlier interpretations within same or adjacent layer\n' +
-          '   - Early findings (Rounds 1-2) serve as interpretive anchors\n';
-      }
-      if (lawKey === 'oneLayerInfluence' && language === 'en') {
-        lawsSection +=
-          '   - Exceptions only for: consistent markers, aligned voices, cross-validation\n';
-      }
-    });
+החזר את הניתוח בפורמט JSON עם המבנה הבא:`
+      : `
+Perform a comprehensive handwriting analysis in a single round, including all the following layers:
 
-    const intro = this.languageService.getPhrase('systemIntro', language);
-    const analysisStructureHeader = this.languageService.getPhrase('analysisStructure', language);
-    const provideJson = this.languageService.getPhrase('provideJson', language);
+1. **Core Identity**: Identify the writer's central identity signature
+2. **Personality Layers**: Analyze visible, conscious, subconscious and hidden layers
+3. **Defense Masks**: Identify primary defense mechanisms
+4. **Internal Contracts**: Map the internal contract system
+5. **Limiting Beliefs**: Identify limiting beliefs operating as identity foundation
+6. **Therapeutic Recommendations**: Provide recommendations based on the analysis
 
-    // Build the full prompt
-    let prompt = `${intro}\nYou are currently conducting Round ${roundNumber}: ${roundName}.\nFocus: ${roundFocus}\n\n` +
-      `CRITICAL LAWS TO FOLLOW:\n\n${lawsSection}\n` +
-      `${analysisStructureHeader}\n` +
-      '1. Identify graphological signs relevant to ' + roundName + '\n' +
-      '2. Connect findings to previous rounds (if applicable)\n' +
-      '3. Apply QA validation to each insight\n' +
-      '4. Document any retroactive influences on earlier layers\n' +
-      '5. Update identity anchors based on new findings\n\n' +
-      previous +
-      `${provideJson}\n` +
-      '{\n' +
-      `  "roundNumber": ${roundNumber},\n` +
-      `  "layer": "${roundName}",\n` +
-      '  "graphologicalSigns": [],\n' +
-      '  "emotionalIndicators": [],\n' +
-      '  "identityAnchors": [],\n' +
-      '  "therapeuticInsights": [],\n' +
-      '  "retroactiveInfluences": [],\n' +
-      '  "qaValidation": {\n' +
-      '    "passed": boolean,\n' +
-      '    "notes": string\n' +
-      '  }\n' +
-      '}';
+Use simple, emotional, human and understandable language. Avoid technical terms. Use everyday human imagery.
 
-    // If Hebrew is requested, explicitly instruct the model to respond in Hebrew
-    if (language === 'he') {
-      prompt += `\n\n${this.languageService.getPhrase('respondInLanguage', language)}`;
+Return the analysis in JSON format with the following structure:`;
+
+    const jsonStructure = `
+{
+  "coreIdentity": {
+    "name": "string",
+    "narrative": "string",
+    "clinicalAnalysis": "string",
+    "ego": "string",
+    "thinking": "string"
+  },
+  "personalityLayers": {
+    "visible": {
+      "patterns": [],
+      "insights": []
+    },
+    "conscious": {
+      "patterns": [],
+      "insights": []
+    },
+    "subconscious": {
+      "patterns": [],
+      "insights": []
+    },
+    "hidden": {
+      "patterns": [],
+      "insights": []
     }
-    return prompt;
+  },
+  "defenceMechanisms": {
+    "primaryMask": {
+      "type": "string",
+      "description": "string",
+      "impact": "string"
+    },
+    "secondaryMasks": []
+  },
+  "internalContracts": {
+    "contracts": [],
+    "impact": "string"
+  },
+  "limitingBeliefs": {
+    "coreBelief": "string",
+    "supportingBeliefs": [],
+    "origin": "string"
+  },
+  "emotionalPatterns": {
+    "dominant": [],
+    "suppressed": [],
+    "conflicts": []
+  },
+  "therapeuticInsights": [],
+  "treatmentRecommendations": [],
+  "therapeuticGoals": [],
+  "recommendedApproach": "string",
+  "suggestedTimeline": "string",
+  "focusAreas": []
+}`;
+
+    return `${intro}\n\n${instructions}\n\n${jsonStructure}`;
   }
 
   /**
-   * Build a user-facing prompt summarising the client context and any
-   * therapist context, instructing the AI to analyse the handwriting
-   * sample for the specified round.  The text is localised using the
-   * LanguageService.
+   * Create user prompt for complete analysis
    */
-  private createUserPrompt(
-    roundNumber: number,
+  private createCompleteUserPrompt(
     clientContext: any,
     additionalContext: any,
     language: SupportedLanguage,
   ): string {
-    const roundName = this.languageService.getRoundName(roundNumber, language);
-    return `${this.languageService.getPhrase('analyzePrompt', language)} ${roundNumber}.\n` +
-      `${this.languageService.getPhrase('clientContext', language)}: ${JSON.stringify(clientContext)}\n` +
-      `${this.languageService.getPhrase('additionalContext', language)}: ${JSON.stringify(additionalContext)}\n\n` +
-      `${this.languageService.getPhrase('applyLaws', language)} ${roundName} ${this.languageService.getPhrase('layer', language)}`;
+    const analyzeText = language === 'he'
+      ? 'נתח את דגימת כתב היד המצורפת.'
+      : 'Analyze the attached handwriting sample.';
+
+    const contextLabel = language === 'he' ? 'הקשר לקוח' : 'Client Context';
+    const additionalLabel = language === 'he' ? 'הקשר נוסף' : 'Additional Context';
+
+    const instruction = language === 'he'
+      ? 'בצע ניתוח מקיף וכולל של כל השכבות והרבדים הזהותיים. השב בעברית.'
+      : 'Perform a comprehensive and complete analysis of all identity layers and levels.';
+
+    return `${analyzeText}\n` +
+      `${contextLabel}: ${JSON.stringify(clientContext)}\n` +
+      `${additionalLabel}: ${JSON.stringify(additionalContext)}\n\n` +
+      instruction;
   }
 }
