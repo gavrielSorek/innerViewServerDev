@@ -42,7 +42,7 @@ export class AiChatService {
         : 'You are a helpful AI assistant for therapists. Provide professional, ethical, and supportive responses.';
     try {
       const completion = await this.openai.chat.completions.create({
-        model: 'gpt-4.1-mini',
+        model: 'gpt-4.1-nano',
         messages: [
           {
             role: 'system',
