@@ -22,6 +22,7 @@ import {
   UpdateSubscriptionDto,
 } from './dto';
 import { AuthGuard } from '../auth/auth.guard';
+import { RolesGuard, Roles } from '../auth/role.guard'; // ADD THIS LINE
 import { UserRole } from './schemas/user.schema';
 
 @Controller('users')
@@ -69,20 +70,25 @@ export class UsersController {
   }
 
   /**
-   * Update current user's subscription plan
+   * Update user's subscription plan (ADMIN ONLY)
+   * This endpoint is restricted to admins for manual subscription management
    */
-  @Patch('subscription')
+  @Patch(':userId/subscription')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.ADMIN)
   async updateSubscription(
     @Request() req: any,
+    @Param('userId') userId: string,
     @Body() updateSubscriptionDto: UpdateSubscriptionDto,
   ) {
-    const user = await this.usersService.updateSubscription(
-      req.user.uid,
+    const user = await this.usersService.updateSubscriptionAsAdmin(
+      userId,
       updateSubscriptionDto,
+      req.user.uid, // admin who made the change
     );
     return {
       user,
-      message: 'Subscription updated successfully',
+      message: 'Subscription updated successfully by admin',
     };
   }
 

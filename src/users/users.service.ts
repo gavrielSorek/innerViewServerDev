@@ -429,4 +429,89 @@ export class UsersService {
 
     return userDoc.toObject();
   }
+
+    /**
+   * Update user's subscription plan - ADMIN ONLY
+   * Includes audit logging for accountability
+   */
+  async updateSubscriptionAsAdmin(
+    userId: string,
+    updateSubscriptionDto: UpdateSubscriptionDto,
+    adminId: string,
+  ): Promise<User> {
+    const userDoc = await this.userModel.findOne({ firebaseUid: userId }).exec();
+    
+    if (!userDoc) {
+      throw new NotFoundException(`User with ID "${userId}" not found`);
+    }
+
+    const previousPlan = userDoc.subscription;
+    userDoc.subscription = updateSubscriptionDto.subscription;
+    userDoc.subscriptionUpdatedAt = new Date();
+    
+    // Add audit metadata
+    userDoc.metadata = {
+      ...userDoc.metadata,
+      subscriptionHistory: [
+        ...(userDoc.metadata?.subscriptionHistory || []),
+        {
+          from: previousPlan,
+          to: updateSubscriptionDto.subscription,
+          changedBy: adminId,
+          changedAt: new Date(),
+          source: 'admin',
+        },
+      ],
+    };
+    
+    await userDoc.save();
+    
+    console.log(`Admin subscription change: User ${userId} from ${previousPlan} to ${updateSubscriptionDto.subscription} by admin ${adminId}`);
+    
+    return userDoc.toObject();
+  }
+
+  /**
+   * Update subscription from payment webhook
+   * This method is called by Stripe/PayPal webhooks
+   */
+  async updateSubscriptionFromPaymentWebhook(
+    userId: string,
+    subscription: SubscriptionPlan,
+    paymentProvider: 'stripe' | 'paypal',
+    paymentMetadata: any,
+  ): Promise<User> {
+    const userDoc = await this.userModel.findOne({ firebaseUid: userId }).exec();
+    
+    if (!userDoc) {
+      throw new NotFoundException(`User with ID "${userId}" not found`);
+    }
+
+    const previousPlan = userDoc.subscription;
+    userDoc.subscription = subscription;
+    userDoc.subscriptionUpdatedAt = new Date();
+    
+    // Add payment metadata
+    userDoc.metadata = {
+      ...userDoc.metadata,
+      subscriptionHistory: [
+        ...(userDoc.metadata?.subscriptionHistory || []),
+        {
+          from: previousPlan,
+          to: subscription,
+          changedAt: new Date(),
+          source: paymentProvider,
+          paymentMetadata,
+        },
+      ],
+      lastPaymentProvider: paymentProvider,
+      lastPaymentMetadata: paymentMetadata,
+    };
+    
+    await userDoc.save();
+    
+    console.log(`Payment webhook subscription change: User ${userId} from ${previousPlan} to ${subscription} via ${paymentProvider}`);
+    
+    return userDoc.toObject();
+  }
 }

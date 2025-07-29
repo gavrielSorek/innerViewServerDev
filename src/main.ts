@@ -36,10 +36,16 @@ async function bootstrap() {
     bodyParser: false, // Disable the default body parser
   });
 
-  // Configure body parser with increased limits
-  app.use(bodyParser.json({ limit: '10mb' }));
-  app.use(bodyParser.urlencoded({ limit: '10mb', extended: true }));
-  app.use(bodyParser.raw({ limit: '10mb' }));
+  // Configure body parser with webhook support
+  const rawBodyBuffer = (req: any, res: any, buf: Buffer, encoding: any) => {
+    if (buf && buf.length) {
+      req.rawBody = buf.toString(encoding || 'utf8');
+    }
+  };
+
+  app.use(bodyParser.json({ verify: rawBodyBuffer, limit: '10mb' }));
+  app.use(bodyParser.urlencoded({ verify: rawBodyBuffer, limit: '10mb', extended: true }));
+  app.use(bodyParser.raw({ verify: rawBodyBuffer, type: '*/*', limit: '10mb' }));
 
   app.enableCors();
   const port = process.env.PORT || 3000;
