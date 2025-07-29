@@ -9,6 +9,12 @@ export enum UserRole {
   THERAPIST = 'therapist',
 }
 
+export enum SubscriptionPlan {
+  FREE = 'free',
+  BASIC = 'basic',
+  PRO = 'pro',
+}
+
 @Schema({ timestamps: true })
 export class User {
   @Prop({ required: true })
@@ -37,6 +43,26 @@ export class User {
 
   @Prop({ type: Object })
   metadata?: Record<string, any>;
+
+  @Prop({ 
+    required: true, 
+    enum: SubscriptionPlan, 
+    default: SubscriptionPlan.FREE,
+    index: true 
+  })
+  subscription: SubscriptionPlan;
+
+  @Prop()
+  subscriptionUpdatedAt?: Date;
 }
 
+// This line was missing - it creates and exports the schema
 export const UserSchema = SchemaFactory.createForClass(User);
+
+// Optional: Add pre-save hook to auto-update subscriptionUpdatedAt
+UserSchema.pre('save', function(next) {
+  if (this.isModified('subscription')) {
+    this.subscriptionUpdatedAt = new Date();
+  }
+  next();
+});

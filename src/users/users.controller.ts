@@ -19,6 +19,7 @@ import {
   UpdateRoleDto,
   UpdateStatusDto,
   SyncUserDto,
+  UpdateSubscriptionDto,
 } from './dto';
 import { AuthGuard } from '../auth/auth.guard';
 import { UserRole } from './schemas/user.schema';
@@ -64,6 +65,24 @@ export class UsersController {
     return {
       user,
       stats,
+    };
+  }
+
+  /**
+   * Update current user's subscription plan
+   */
+  @Patch('subscription')
+  async updateSubscription(
+    @Request() req: any,
+    @Body() updateSubscriptionDto: UpdateSubscriptionDto,
+  ) {
+    const user = await this.usersService.updateSubscription(
+      req.user.uid,
+      updateSubscriptionDto,
+    );
+    return {
+      user,
+      message: 'Subscription updated successfully',
     };
   }
 

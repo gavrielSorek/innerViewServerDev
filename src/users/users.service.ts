@@ -9,7 +9,7 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { User, UserDocument, UserRole } from './schemas/user.schema';
+import { User, UserDocument, UserRole, SubscriptionPlan } from './schemas/user.schema';
 import {
   CreateUserDto,
   UpdateUserDto,
@@ -17,6 +17,7 @@ import {
   UpdateStatusDto,
   SyncUserDto,
   UserStatsDto,
+  UpdateSubscriptionDto,
 } from './dto';
 import { UserStatsService } from './user-stats.service';
 import * as admin from 'firebase-admin';
@@ -52,10 +53,11 @@ export class UsersService {
         return existingUser.toObject();
       }
 
-      // Create new user
+      // Create new user with default free subscription
       const createdUser = new this.userModel({
         ...createUserDto,
         role: createUserDto.role || UserRole.THERAPIST,
+        subscription: SubscriptionPlan.FREE,
         lastLoginAt: new Date(),
       });
       const savedUser = await createdUser.save();
@@ -65,6 +67,87 @@ export class UsersService {
         throw new ConflictException('User with this email already exists');
       }
       throw error;
+    }
+  }
+
+  /**
+   * Update user's subscription plan
+   */
+  async updateSubscription(
+    userId: string,
+    updateSubscriptionDto: UpdateSubscriptionDto,
+  ): Promise<User> {
+    const userDoc = await this.userModel.findOne({ firebaseUid: userId }).exec();
+    
+    if (!userDoc) {
+      throw new NotFoundException(`User with ID "${userId}" not found`);
+    }
+
+    userDoc.subscription = updateSubscriptionDto.subscription;
+    userDoc.subscriptionUpdatedAt = new Date();
+    await userDoc.save();
+    
+    return userDoc.toObject();
+  }
+
+  /**
+   * Check if user has access to a feature based on their subscription
+   */
+  async checkSubscriptionAccess(
+    userId: string,
+    requiredPlan: SubscriptionPlan,
+  ): Promise<boolean> {
+    const user = await this.findOne(userId);
+    
+    // Define subscription hierarchy
+    const planHierarchy = {
+      [SubscriptionPlan.FREE]: 0,
+      [SubscriptionPlan.BASIC]: 1,
+      [SubscriptionPlan.PRO]: 2,
+    };
+
+    return planHierarchy[user.subscription] >= planHierarchy[requiredPlan];
+  }
+
+  /**
+   * Get subscription limits for a user
+   */
+  async getSubscriptionLimits(userId: string): Promise<{
+    maxClients: number;
+    maxMeetingsPerMonth: number;
+    maxFuturegraphAnalyses: number;
+    canExportReports: boolean;
+    canUseAdvancedFeatures: boolean;
+  }> {
+    const user = await this.findOne(userId);
+    
+    switch (user.subscription) {
+      case SubscriptionPlan.FREE:
+        return {
+          maxClients: 5,
+          maxMeetingsPerMonth: 20,
+          maxFuturegraphAnalyses: 2,
+          canExportReports: false,
+          canUseAdvancedFeatures: false,
+        };
+      case SubscriptionPlan.BASIC:
+        return {
+          maxClients: 25,
+          maxMeetingsPerMonth: 100,
+          maxFuturegraphAnalyses: 10,
+          canExportReports: true,
+          canUseAdvancedFeatures: false,
+        };
+      case SubscriptionPlan.PRO:
+        return {
+          maxClients: -1, // unlimited
+          maxMeetingsPerMonth: -1, // unlimited
+          maxFuturegraphAnalyses: -1, // unlimited
+          canExportReports: true,
+          canUseAdvancedFeatures: true,
+        };
+      default:
+        return this.getSubscriptionLimits(SubscriptionPlan.FREE);
     }
   }
 
@@ -94,7 +177,7 @@ export class UsersService {
         await user.save();
         return user.toObject();
       } else {
-        // Create new user
+        // Create new user with FREE subscription
         return await this.create(userData as CreateUserDto);
       }
     } catch (error) {
@@ -197,6 +280,7 @@ export class UsersService {
       delete updateData.role;
       delete updateData.firebaseUid;
       delete updateData.email;
+      delete updateData.subscription; // Subscription updates should use dedicated endpoint
     }
 
     Object.assign(userDoc, updateData);
@@ -335,7 +419,7 @@ export class UsersService {
     let userDoc = await this.userModel.findOne({ firebaseUid: firebaseUser.uid }).exec();
     
     if (!userDoc) {
-      // Auto-create user from Firebase
+      // Auto-create user from Firebase with FREE subscription
       return await this.syncFromFirebase({
         firebaseUid: firebaseUser.uid,
         email: firebaseUser.email,

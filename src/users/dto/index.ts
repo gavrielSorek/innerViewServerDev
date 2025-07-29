@@ -5,3 +5,4 @@ export { UpdateRoleDto } from './update-role.dto';
 export { UpdateStatusDto } from './update-status.dto';
 export { SyncUserDto } from './sync-user.dto';
 export { UserStatsDto } from './user-stats.dto';
+export { UpdateSubscriptionDto } from './update-subscription.dto';
