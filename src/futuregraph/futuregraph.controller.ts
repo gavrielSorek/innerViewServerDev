@@ -11,6 +11,8 @@ import {
 import { FuturegraphService } from './futuregraph.service';
 import { AuthGuard } from '../auth/auth.guard';
 import { StartSessionDto } from './dto/start-session.dto';
+import { SubscriptionPlan } from '../users/schemas/user.schema';
+import { SubscriptionGuard, RequireSubscription} from '../common/guards/subscription.guard';
 
 @Controller('ai/futuregraph')
 @UseGuards(AuthGuard)
@@ -21,6 +23,8 @@ export class FuturegraphController {
    * Start and complete analysis in a single operation.
    * Returns the sessionId, complete analysis, and report.
    */
+  @RequireSubscription(SubscriptionPlan.BASIC)
+  @UseGuards(SubscriptionGuard)
   @Post('analyze')
   async analyze(@Body() startSessionDto: StartSessionDto) {
     const result = await this.futuregraphService.startAndCompleteAnalysis(startSessionDto);
