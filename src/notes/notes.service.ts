@@ -6,7 +6,7 @@ import { CreateNoteDto } from './dto/create-note.dto';
 import { UpdateNoteDto } from './dto/update-note.dto';
 
 /**
- * Service for managing note documents.  Includes strongly typed
+ * Service for managing note documents. Includes strongly typed
  * signatures for better developer experience and correctness.
  */
 @Injectable()
@@ -24,7 +24,7 @@ export class NotesService {
   }
 
   /**
-   * Fetch a single note scoped to the supplied user and client.  Throws
+   * Fetch a single note scoped to the supplied user and client. Throws
    * when no document exists.
    */
   async findOne(id: string, clientId: string, userId: string): Promise<Note> {
@@ -38,7 +38,7 @@ export class NotesService {
   }
 
   /**
-   * Create a new note.  The DTO passed in should already contain
+   * Create a new note. The DTO passed in should already contain
    * userId and clientId properties.
    */
   async create(
@@ -49,8 +49,8 @@ export class NotesService {
   }
 
   /**
-   * Update an existing note by id and scope.  Both PUT and PATCH
-   * operations funnel through this method.  Throws if the document
+   * Update an existing note by id and scope. Both PUT and PATCH
+   * operations funnel through this method. Throws if the document
    * cannot be found.
    */
   async update(
@@ -70,20 +70,25 @@ export class NotesService {
         `Note with ID "${id}" not found for client "${updateNoteDto.clientId}" and user "${updateNoteDto.userId}"`,
       );
     }
-    return existingNote;
+
+    return existingNote.toObject();
   }
 
   /**
-   * Delete a note by id, client and user.  Throws when the document is
+   * Delete a note by id, client and user. Throws when the document is
    * not present.
    */
   async remove(id: string, clientId: string, userId: string): Promise<Note> {
-    const result = await this.noteModel.findOneAndDelete({ _id: id, clientId, userId }).exec();
+    const result = await this.noteModel
+      .findOneAndDelete({ _id: id, clientId, userId }, { new: true })
+      .exec();
+
     if (!result) {
       throw new NotFoundException(
         `Note with ID "${id}" not found for client "${clientId}" and user "${userId}"`,
       );
     }
-    return result;
+
+    return result.toObject();
   }
 }

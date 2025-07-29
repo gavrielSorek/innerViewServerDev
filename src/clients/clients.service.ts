@@ -65,10 +65,12 @@ export class ClientsService {
         { new: true },
       )
       .exec();
+
     if (!existingClient) {
       throw new NotFoundException(`Client with ID "${id}" not found`);
     }
-    return existingClient;
+
+    return existingClient.toObject();
   }
 
   /**
@@ -76,10 +78,14 @@ export class ClientsService {
    * there is no document to delete.
    */
   async remove(id: string, userId: string): Promise<Client> {
-    const result = await this.clientModel.findOneAndDelete({ _id: id, userId }).exec();
+    const result = await this.clientModel
+      .findOneAndDelete({ _id: id, userId }, { new: true })
+      .exec();
+
     if (!result) {
       throw new NotFoundException(`Client with ID "${id}" not found`);
     }
-    return result;
+
+    return result.toObject();
   }
 }

@@ -44,26 +44,35 @@ export class PreferencesService {
    * (upsert behaviour).  Returns the updated or newly created record.
    */
   async update(userId: string, updatePreferenceDto: UpdatePreferenceDto): Promise<UserPreference> {
-    const existingPreference = await this.userPreferenceModel
-      .findOneAndUpdate({ userId }, updatePreferenceDto, {
-        new: true,
-        upsert: true,
-      })
-      .exec();
-    return existingPreference;
+  const existingPreference = await this.userPreferenceModel
+    .findOneAndUpdate({ userId }, updatePreferenceDto, {
+      new: true,            // return the updated document
+      upsert: true,
+    })
+    .exec();
+
+  if (!existingPreference) {
+    throw new NotFoundException(`Unable to find or create preference for user "${userId}"`);
   }
+
+  return existingPreference.toObject();
+}
 
   /**
    * Remove a preference document by userId.  Throws when no record
    * exists.
    */
   async remove(userId: string): Promise<UserPreference> {
-    const result = await this.userPreferenceModel.findOneAndDelete({ userId }).exec();
-    if (!result) {
-      throw new NotFoundException(`User preferences for user "${userId}" not found`);
-    }
-    return result;
+  const result = await this.userPreferenceModel
+    .findOneAndDelete({ userId }, { new: true })
+    .exec();
+
+  if (!result) {
+    throw new NotFoundException(`User preferences for user "${userId}" not found`);
   }
+
+  return result.toObject();
+}
 
   /**
    * Convenience method to fetch the user's preferences or create a
