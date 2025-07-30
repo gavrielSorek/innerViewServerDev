@@ -7,33 +7,95 @@ import {
   Param,
   UseGuards,
   Query,
+  Request,
+  Ip,
+  Headers,
 } from '@nestjs/common';
 import { FuturegraphService } from './futuregraph.service';
 import { AuthGuard } from '../auth/auth.guard';
 import { StartSessionDto } from './dto/start-session.dto';
 import { SubscriptionPlan } from '../users/schemas/user.schema';
 import { SubscriptionGuard, RequireSubscription} from '../common/guards/subscription.guard';
+import { UsageTrackingService } from '../usage-tracking/usage-tracking.service';
+import { UsageType } from '../usage-tracking/schemas/usage-tracking.schema';
 
 @Controller('ai/futuregraph')
 @UseGuards(AuthGuard)
 export class FuturegraphController {
-  constructor(private readonly futuregraphService: FuturegraphService) {}
+  constructor(
+    private readonly futuregraphService: FuturegraphService,
+    private readonly usageTrackingService: UsageTrackingService,
+  ) {}
 
   /**
    * Start and complete analysis in a single operation.
    * Returns the sessionId, complete analysis, and report.
    */
-  @RequireSubscription(SubscriptionPlan.BASIC)
-  @UseGuards(SubscriptionGuard)
   @Post('analyze')
-  async analyze(@Body() startSessionDto: StartSessionDto) {
+  async analyze(
+    @Request() req: any,
+    @Body() startSessionDto: StartSessionDto,
+    @Ip() ip: string,
+    @Headers('user-agent') userAgent: string,
+  ) {
+    const userId = req.user.uid || req.user.dbUser?.firebaseUid;
+    
+    // Override userId in DTO with authenticated user
+    startSessionDto = { ...startSessionDto, userId };
+    
+    // Check and enforce usage limit
+    await this.usageTrackingService.enforceUsageLimit(
+      userId,
+      UsageType.FUTUREGRAPH_ANALYZE,
+      {
+        clientId: startSessionDto.clientId,
+        language: startSessionDto.language,
+      },
+      ip,
+      userAgent,
+    );
+    
+    // Process the analysis
+    const startTime = Date.now();
     const result = await this.futuregraphService.startAndCompleteAnalysis(startSessionDto);
-    return {
+    const responseTime = Date.now() - startTime;
+    
+    // Track additional metadata
+    await this.usageTrackingService.trackUsage(
+      userId,
+      UsageType.FUTUREGRAPH_ANALYZE,
+      {
+        sessionId: result.sessionId,
+        clientId: startSessionDto.clientId,
+        responseTime,
+        success: true,
+      },
+    );
+    
+    // Get updated usage stats
+    const usageCheck = await this.usageTrackingService.checkUsageLimit(
+      userId,
+      UsageType.FUTUREGRAPH_ANALYZE,
+    );
+    
+    // Include usage info in response
+    const response: any = {
       sessionId: result.sessionId,
       status: 'completed',
       analysis: result.analysis,
       report: result.report,
     };
+    
+    if (usageCheck.remaining <= 1 || usageCheck.message) {
+      response.usage = {
+        remaining: usageCheck.remaining,
+        limit: usageCheck.limit,
+        message: usageCheck.message,
+        upgradePrompt: usageCheck.upgradePrompt,
+      };
+    }
+    
+    return response;
   }
 
   /**
@@ -74,12 +136,42 @@ export class FuturegraphController {
   }
 
   /**
+   * Check usage limits before attempting analysis
+   */
+  @Get('check-usage')
+  async checkUsage(@Request() req: any) {
+    const userId = req.user.uid || req.user.dbUser?.firebaseUid;
+    
+    const usageCheck = await this.usageTrackingService.checkUsageLimit(
+      userId,
+      UsageType.FUTUREGRAPH_ANALYZE,
+    );
+    
+    return {
+      canAnalyze: usageCheck.allowed,
+      usage: {
+        used: usageCheck.used,
+        limit: usageCheck.limit,
+        remaining: usageCheck.remaining,
+        resetDate: usageCheck.resetDate,
+      },
+      message: usageCheck.message,
+      upgradePrompt: usageCheck.upgradePrompt,
+    };
+  }
+
+  /**
    * Legacy endpoints for backward compatibility - redirect to new flow
    */
   @Post('start-session')
-  async startSession(@Body() startSessionDto: StartSessionDto) {
+  async startSession(
+    @Request() req: any,
+    @Body() startSessionDto: StartSessionDto,
+    @Ip() ip: string,
+    @Headers('user-agent') userAgent: string,
+  ) {
     // Redirect to new single-round analysis
-    return this.analyze(startSessionDto);
+    return this.analyze(req, startSessionDto, ip, userAgent);
   }
 
   @Post('process-round')

@@ -1,3 +1,4 @@
+// src/futuregraph/futuregraph.module.ts
 import { Module, Global } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ConfigModule } from '@nestjs/config';
@@ -9,13 +10,15 @@ import {
 } from './schemas/futuregraph-session.schema';
 import { AiService } from './ai.service';
 import { LanguageService } from '../common/language.service';
-import { UsersModule } from '../users/users.module'; // <-- Import UsersModule
+import { UsersModule } from '../users/users.module';
+import { UsageTrackingModule } from '../usage-tracking/usage-tracking.module';
 
 @Global()
 @Module({
   imports: [
     ConfigModule,
-    UsersModule, // <-- Add UsersModule here!
+    UsersModule,
+    UsageTrackingModule,
     MongooseModule.forFeature([
       { name: FuturegraphSession.name, schema: FuturegraphSessionSchema },
     ]),

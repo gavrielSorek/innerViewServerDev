@@ -1,8 +1,4 @@
-// ============================================
-// FILE 2: Fix src/app.module.ts
-// ============================================
-// Add the WebhooksModule import
-
+// src/app.module.ts
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
@@ -16,7 +12,8 @@ import { NotesModule } from './notes/notes.module';
 import { PreferencesModule } from './preferences/preferences.module';
 import { FuturegraphModule } from './futuregraph/futuregraph.module';
 import { AiModule } from './ai/ai.module';
-import { WebhooksModule } from './webhooks/webhooks.module'; // ADD THIS LINE
+import { WebhooksModule } from './webhooks/webhooks.module';
+import { UsageTrackingModule } from './usage-tracking/usage-tracking.module';
 
 @Module({
   imports: [
@@ -36,7 +33,8 @@ import { WebhooksModule } from './webhooks/webhooks.module'; // ADD THIS LINE
     PreferencesModule,
     FuturegraphModule,
     AiModule,
-    WebhooksModule, // Now it will work
+    WebhooksModule,
+    UsageTrackingModule,
   ],
   controllers: [AppController],
   providers: [AppService],
