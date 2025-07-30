@@ -28,28 +28,3 @@ export class StartSessionDto {
   readonly language?: string;
 }
 
-// src/futuregraph/dto/start-session.dto.ts
-// Keep the same for backward compatibility
-
-// src/futuregraph/dto/process-round.dto.ts
-// Mark as deprecated
-export class ProcessRoundDto {
-  /** @deprecated Use the new single-round analysis endpoint instead */
-  readonly sessionId!: string;
-  /** @deprecated Rounds are no longer used */
-  readonly roundNumber!: number;
-  readonly additionalContext?: Record<string, any>;
-  readonly language?: string;
-}
-
-// src/futuregraph/dto/submit-feedback.dto.ts
-// Mark as deprecated
-export class SubmitFeedbackDto {
-  /** @deprecated Feedback is no longer needed in single-round analysis */
-  readonly sessionId!: string;
-  /** @deprecated Rounds are no longer used */
-  readonly roundNumber!: number;
-  readonly feedback!: string;
-  readonly approved!: boolean;
-  readonly language?: string;
-}
