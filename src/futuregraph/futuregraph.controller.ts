@@ -1,4 +1,10 @@
-// src/futuregraph/futuregraph.controller.ts
+// Modified FutureGraph controller to support optional inclusion of handwriting images
+// in session responses. The new implementation allows clients to specify a
+// `includeImage` query parameter when retrieving a session. If the parameter
+// evaluates to true, the corresponding handwriting image is looked up from the
+// new FuturegraphImage collection and included in the response. Otherwise the
+// image is omitted to reduce payload size.
+
 import {
   Controller,
   Get,
@@ -15,7 +21,7 @@ import { FuturegraphService } from './futuregraph.service';
 import { AuthGuard } from '../auth/auth.guard';
 import { StartSessionDto } from './dto/start-session.dto';
 import { SubscriptionPlan } from '../users/schemas/user.schema';
-import { SubscriptionGuard, RequireSubscription} from '../common/guards/subscription.guard';
+import { SubscriptionGuard, RequireSubscription } from '../common/guards/subscription.guard';
 import { UsageTrackingService } from '../usage-tracking/usage-tracking.service';
 import { UsageType } from '../usage-tracking/schemas/usage-tracking.schema';
 
@@ -39,10 +45,10 @@ export class FuturegraphController {
     @Headers('user-agent') userAgent: string,
   ) {
     const userId = req.user.uid || req.user.dbUser?.firebaseUid;
-    
+
     // Override userId in DTO with authenticated user
     startSessionDto = { ...startSessionDto, userId };
-    
+
     // Check and enforce usage limit
     await this.usageTrackingService.enforceUsageLimit(
       userId,
@@ -54,12 +60,12 @@ export class FuturegraphController {
       ip,
       userAgent,
     );
-    
+
     // Process the analysis
     const startTime = Date.now();
     const result = await this.futuregraphService.startAndCompleteAnalysis(startSessionDto);
     const responseTime = Date.now() - startTime;
-    
+
     // Track additional metadata
     await this.usageTrackingService.trackUsage(
       userId,
@@ -71,13 +77,13 @@ export class FuturegraphController {
         success: true,
       },
     );
-    
+
     // Get updated usage stats
     const usageCheck = await this.usageTrackingService.checkUsageLimit(
       userId,
       UsageType.FUTUREGRAPH_ANALYZE,
     );
-    
+
     // Include usage info in response
     const response: any = {
       sessionId: result.sessionId,
@@ -85,7 +91,7 @@ export class FuturegraphController {
       analysis: result.analysis,
       report: result.report,
     };
-    
+
     if (usageCheck.remaining <= 1 || usageCheck.message) {
       response.usage = {
         remaining: usageCheck.remaining,
@@ -94,28 +100,38 @@ export class FuturegraphController {
         upgradePrompt: usageCheck.upgradePrompt,
       };
     }
-    
+
     return response;
   }
 
   /**
-   * Retrieve a completed analysis session including the handwriting image.
-   * This endpoint allows retrieval of stored analyses with their images.
+   * Retrieve a completed analysis session.
+   * Optionally include the handwriting image when the `includeImage` query
+   * parameter is truthy ("true", "1" or "yes"). Without this parameter the
+   * image is omitted, significantly reducing response size.
    */
   @Get('session/:sessionId')
-  async getSession(@Param('sessionId') sessionId: string) {
-    const result = await this.futuregraphService.getAnalysisSession(sessionId);
-    return {
+  async getSession(
+    @Param('sessionId') sessionId: string,
+    @Query('includeImage') includeImage?: string,
+  ) {
+    // interpret includeImage flag; accept common truthy values
+    const include = ['true', '1', 'yes'].includes((includeImage ?? '').toLowerCase());
+    const result = await this.futuregraphService.getAnalysisSession(sessionId, include);
+    const response: any = {
       sessionId: result.session.sessionId,
       clientId: result.session.clientId,
       createdAt: result.session.startTime,
       completedAt: result.session.completedAt,
       language: result.session.language,
       status: result.session.status,
-      handwritingImage: result.handwritingImage,
       analysis: result.analysis,
       report: result.report,
     };
+    if (include && result.handwritingImage) {
+      response.handwritingImage = result.handwritingImage;
+    }
+    return response;
   }
 
   /**
@@ -141,12 +157,12 @@ export class FuturegraphController {
   @Get('check-usage')
   async checkUsage(@Request() req: any) {
     const userId = req.user.uid || req.user.dbUser?.firebaseUid;
-    
+
     const usageCheck = await this.usageTrackingService.checkUsageLimit(
       userId,
       UsageType.FUTUREGRAPH_ANALYZE,
-    );
-    
+    ); 
+
     return {
       canAnalyze: usageCheck.allowed,
       usage: {
@@ -184,8 +200,8 @@ export class FuturegraphController {
 
   @Get('status/:sessionId')
   async getStatus(@Param('sessionId') sessionId: string) {
-    // Redirect to get session endpoint
-    const result = await this.futuregraphService.getAnalysisSession(sessionId);
+    // Redirect to get session endpoint without image
+    const result = await this.futuregraphService.getAnalysisSession(sessionId, false);
     return {
       sessionId: result.session.sessionId,
       status: result.session.status,
@@ -195,7 +211,7 @@ export class FuturegraphController {
 
   @Get('report/:sessionId')
   async getReport(@Param('sessionId') sessionId: string) {
-    const result = await this.futuregraphService.getAnalysisSession(sessionId);
+    const result = await this.futuregraphService.getAnalysisSession(sessionId, false);
     return result.report;
   }
 }

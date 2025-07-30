@@ -1,4 +1,9 @@
-// src/futuregraph/schemas/futuregraph-session.schema.ts
+// Updated session schema for FutureGraph. The handwriting image field has
+// been made optional and is slated for deprecation in favour of the
+// FuturegraphImage collection. Keeping this field optional allows legacy
+// documents to be read without modification while new sessions avoid
+// storing the image here.
+
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
 
@@ -18,9 +23,13 @@ export class FuturegraphSession {
   @Prop({ required: true, index: true })
   clientId!: string;
 
-  /** Base64 encoded handwriting image - stored for retrieval */
-  @Prop({ required: true })
-  handwritingImage!: string;
+  /**
+   * Base64 encoded handwriting image - stored for retrieval.
+   * This property is now optional and may be omitted for new sessions.
+   * Images should instead be stored in the FuturegraphImage collection.
+   */
+  @Prop()
+  handwritingImage?: string;
 
   /** Arbitrary structured context provided at session start */
   @Prop({ type: Object })
