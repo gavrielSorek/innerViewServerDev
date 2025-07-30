@@ -226,4 +226,38 @@ Return the analysis in JSON format with the following structure:`;
       `${additionalLabel}: ${JSON.stringify(additionalContext)}\n\n` +
       instruction;
   }
+
+
+  async getFocusedAnalysis(
+    analysisJson: any,
+    focus: string,
+    language: string,
+  ): Promise<any> {
+    const prompt = `
+      You are an expert analyst. Based on the provided analysis JSON, generate a new version of the report with a specific focus on "${focus}".
+      The entire output must be in the "${language}" language.
+      The output must be a valid JSON object, maintaining the same structure as the original report.
+      Do not include any text or formatting outside of the JSON object.
+
+      Original Analysis:
+      ${JSON.stringify(analysisJson)}
+    `;
+
+    try {
+      const completion = await this.openai.chat.completions.create({
+        model: 'gpt-4.1-nano', // Or your preferred model
+        messages: [{ role: 'system', content: prompt }],
+        response_format: { type: "json_object" },
+      });
+
+      const result = completion.choices[0].message.content;
+      if (!result) {
+        return null;
+      }
+      return JSON.parse(result);
+    } catch (error) {
+      console.error('Error fetching focused analysis from OpenAI:', error);
+      throw new Error('Failed to get focused analysis from AI model.');
+    }
+  }
 }

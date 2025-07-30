@@ -16,6 +16,8 @@ import {
   Request,
   Ip,
   Headers,
+  HttpException,
+  HttpStatus,
 } from '@nestjs/common';
 import { FuturegraphService } from './futuregraph.service';
 import { AuthGuard } from '../auth/auth.guard';
@@ -24,6 +26,7 @@ import { SubscriptionPlan } from '../users/schemas/user.schema';
 import { SubscriptionGuard, RequireSubscription } from '../common/guards/subscription.guard';
 import { UsageTrackingService } from '../usage-tracking/usage-tracking.service';
 import { UsageType } from '../usage-tracking/schemas/usage-tracking.schema';
+import { FocusAnalysisDto } from './dto/focus-analysis.dto';
 
 @Controller('ai/futuregraph')
 @UseGuards(AuthGuard)
@@ -213,5 +216,27 @@ export class FuturegraphController {
   async getReport(@Param('sessionId') sessionId: string) {
     const result = await this.futuregraphService.getAnalysisSession(sessionId, false);
     return result.report;
+  }
+
+   @Get('focus')
+  async focusAnalysis(@Query() query: FocusAnalysisDto) {
+    try {
+      const focusedAnalysis = await this.futuregraphService.getFocusedAnalysis(
+        query.sessionId,
+        query.focus,
+        query.language,
+      );
+      return focusedAnalysis;
+    } catch (error) {
+      // Handle known errors, like session not found
+      if (error.status === 404) {
+        throw new HttpException(error.message, HttpStatus.NOT_FOUND);
+      }
+      // Handle other potential errors
+      throw new HttpException(
+        'An error occurred while processing the focus analysis.',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
   }
 }

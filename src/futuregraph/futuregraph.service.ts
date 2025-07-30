@@ -331,4 +331,29 @@ export class FuturegraphService {
       ],
     };
   }
-}  
+
+  async getFocusedAnalysis(
+    sessionId: string,
+    focus: string,
+    language: string,
+  ): Promise<any> {
+    // Use Mongoose to find the session by sessionId
+    const session = await this.sessionModel.findOne({ sessionId }).exec();
+
+    if (!session || !session.completeAnalysis) {
+      throw new NotFoundException(`Session with ID "${sessionId}" not found or has no analysis.`);
+    }
+
+    // Use the completeAnalysis field as the full analysis JSON
+    const analysisJson = session.completeAnalysis;
+
+    // Use aiService for focused analysis
+    const focusedReport = await this.aiService.getFocusedAnalysis(
+      analysisJson,
+      focus,
+      language,
+    );
+
+    return focusedReport;
+  }
+}
