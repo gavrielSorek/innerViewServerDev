@@ -49,7 +49,7 @@ export class AiService {
           },
         ],
         temperature: 0.7,
-        max_tokens: 4000, // Increased for comprehensive analysis
+        max_tokens: 4000,
       });
 
       let content = (completion.choices[0].message.content as string)?.trim() ?? '';
@@ -95,11 +95,13 @@ export class AiService {
 1. **זהות מרכזית (Core Identity)**: זהה את חתימת הזהות המרכזית של הכותב
 2. **שכבות אישיות**: נתח את השכבות הגלויות, המודעות, התת-מודעות והנסתרות
 3. **מסכות הגנה**: זהה את מנגנוני ההגנה העיקריים
-4. **חוזים פנימיים**: מפה את מערכת החוזים הפנימיים
-5. **אמונות מגבילות**: זהה את האמונות המגבילות הפועלות כבסיס זהותי
-6. **המלצות טיפוליות**: ספק המלצות מבוססות על הניתוח
+4. **חוזים פנימיים**: מפה את מערכת החוזים הפנימיים - מה האדם מחויב אליו פנימית
+5. **יכולות שכליות-רגשיות-חברתיות**: זהה את החוזקות והכישורים
+6. **אמונות מגבילות**: זהה את האמונות המגבילות הפועלות כבסיס זהותי
+7. **המלצות טיפוליות**: ספק המלצות מבוססות על הניתוח
 
 השתמש בשפה פשוטה, רגשית, אנושית ומובנת. הימנע ממונחים טכניים. השתמש בדימויים אנושיים מחיי היומיום.
+כל התשובות והתכנים צריכים להיות בעברית בלבד.
 
 החזר את הניתוח בפורמט JSON עם המבנה הבא:`
       : `
@@ -108,11 +110,13 @@ Perform a comprehensive handwriting analysis in a single round, including all th
 1. **Core Identity**: Identify the writer's central identity signature
 2. **Personality Layers**: Analyze visible, conscious, subconscious and hidden layers
 3. **Defense Masks**: Identify primary defense mechanisms
-4. **Internal Contracts**: Map the internal contract system
-5. **Limiting Beliefs**: Identify limiting beliefs operating as identity foundation
-6. **Therapeutic Recommendations**: Provide recommendations based on the analysis
+4. **Internal Contracts**: Map the internal contract system - what the person is internally committed to
+5. **Intellectual-Emotional-Social Capabilities**: Identify strengths and abilities
+6. **Limiting Beliefs**: Identify limiting beliefs operating as identity foundation
+7. **Therapeutic Recommendations**: Provide recommendations based on the analysis
 
 Use simple, emotional, human and understandable language. Avoid technical terms. Use everyday human imagery.
+All responses and content should be in English only.
 
 Return the analysis in JSON format with the following structure:`;
 
@@ -152,8 +156,30 @@ Return the analysis in JSON format with the following structure:`;
     "secondaryMasks": []
   },
   "internalContracts": {
-    "contracts": [],
-    "impact": "string"
+    "contracts": [
+      {
+        "name": "string",
+        "description": "string",
+        "purpose": "string",
+        "impact": "string"
+      }
+    ],
+    "overallImpact": "string"
+  },
+  "intellectualEmotionalSocialCapabilities": {
+    "intellectual": {
+      "capabilities": [],
+      "strengths": []
+    },
+    "emotional": {
+      "capabilities": [],
+      "strengths": []
+    },
+    "social": {
+      "capabilities": [],
+      "strengths": []
+    },
+    "summary": "string"
   },
   "limitingBeliefs": {
     "coreBelief": "string",
@@ -192,8 +218,8 @@ Return the analysis in JSON format with the following structure:`;
     const additionalLabel = language === 'he' ? 'הקשר נוסף' : 'Additional Context';
 
     const instruction = language === 'he'
-      ? 'בצע ניתוח מקיף וכולל של כל השכבות והרבדים הזהותיים. השב בעברית.'
-      : 'Perform a comprehensive and complete analysis of all identity layers and levels.';
+      ? `בצע ניתוח מקיף וכולל של כל השכבות והרבדים הזהותיים. כלול חוזים פנימיים מפורטים ויכולות שכליות-רגשיות-חברתיות. כל התוכן צריך להיות בעברית.`
+      : `Perform a comprehensive and complete analysis of all identity layers and levels. Include detailed internal contracts and intellectual-emotional-social capabilities. All content should be in English.`;
 
     return `${analyzeText}\n` +
       `${contextLabel}: ${JSON.stringify(clientContext)}\n` +

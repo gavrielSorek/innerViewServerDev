@@ -1,8 +1,4 @@
-// FutureGraph service modifications. This version separates image storage
-// from session documents by persisting handwriting images in the
-// FuturegraphImage collection. It also adds support for optionally
-// retrieving the image when fetching a session via an includeImage flag.
-
+// src/futuregraph/futuregraph.service.ts
 import {
   Injectable,
   NotFoundException,
@@ -48,8 +44,7 @@ export class FuturegraphService {
       .substr(2, 9)}`;
     const language: SupportedLanguage = this.languageService.validate(dto.language);
 
-    // Persist the session without the handwriting image. The image will be stored
-    // separately to avoid bloating the session document.
+    // Persist the session without the handwriting image
     const session = new this.sessionModel({
       sessionId,
       userId: dto.userId,
@@ -180,6 +175,13 @@ export class FuturegraphService {
       personalityLayers: analysis.personalityLayers || {},
       emotionalPatterns: analysis.emotionalPatterns || {},
       defenceMechanisms: analysis.defenceMechanisms || {},
+      
+      // Internal Contracts - חוזים פנימיים
+      internalContracts: this.formatInternalContracts(analysis.internalContracts, language),
+      
+      // Intellectual-Emotional-Social Capabilities - יכולות שכליות-רגשיות-חברתיות
+      capabilities: this.formatCapabilities(analysis.intellectualEmotionalSocialCapabilities, language),
+      
       limitingBeliefs: analysis.limitingBeliefs || {},
       therapeuticInsights: analysis.therapeuticInsights || [],
       treatmentRecommendations: analysis.treatmentRecommendations || [],
@@ -187,6 +189,56 @@ export class FuturegraphService {
         analysis,
         language,
       ),
+    };
+  }
+
+  /**
+   * Format internal contracts for the report
+   */
+  private formatInternalContracts(contracts: any, language: SupportedLanguage): any {
+    if (!contracts) {
+      return {
+        title: language === 'he' ? 'חוזים פנימיים' : 'Internal Contracts',
+        contracts: [],
+        overallImpact: language === 'he' 
+          ? 'לא זוהו חוזים פנימיים משמעותיים' 
+          : 'No significant internal contracts identified',
+      };
+    }
+
+    return {
+      title: language === 'he' ? 'חוזים פנימיים' : 'Internal Contracts',
+      contracts: contracts.contracts || [],
+      overallImpact: contracts.overallImpact || '',
+    };
+  }
+
+  /**
+   * Format intellectual-emotional-social capabilities for the report
+   */
+  private formatCapabilities(capabilities: any, language: SupportedLanguage): any {
+    if (!capabilities) {
+      return {
+        title: language === 'he' 
+          ? 'יכולות שכליות-רגשיות-חברתיות' 
+          : 'Intellectual-Emotional-Social Capabilities',
+        intellectual: { capabilities: [], strengths: [] },
+        emotional: { capabilities: [], strengths: [] },
+        social: { capabilities: [], strengths: [] },
+        summary: language === 'he' 
+          ? 'נדרש ניתוח נוסף לזיהוי יכולות' 
+          : 'Further analysis needed to identify capabilities',
+      };
+    }
+
+    return {
+      title: language === 'he' 
+        ? 'יכולות שכליות-רגשיות-חברתיות' 
+        : 'Intellectual-Emotional-Social Capabilities',
+      intellectual: capabilities.intellectual || { capabilities: [], strengths: [] },
+      emotional: capabilities.emotional || { capabilities: [], strengths: [] },
+      social: capabilities.social || { capabilities: [], strengths: [] },
+      summary: capabilities.summary || '',
     };
   }
 
@@ -210,7 +262,20 @@ export class FuturegraphService {
       analysis.therapeuticInsights?.[0] ||
       (language === 'he' ? 'דפוסים רגשיים עמוקים' : 'deep emotional patterns');
 
-    return `${intro}${coreIdentity}. ${mainInsight}`;
+    // Include contracts and capabilities summary
+    const contractsSummary = analysis.internalContracts?.contracts?.length > 0
+      ? language === 'he' 
+        ? ` עם ${analysis.internalContracts.contracts.length} חוזים פנימיים מרכזיים`
+        : ` with ${analysis.internalContracts.contracts.length} primary internal contracts`
+      : '';
+
+    const capabilitiesSummary = analysis.intellectualEmotionalSocialCapabilities?.summary
+      ? language === 'he'
+        ? ` ויכולות בולטות בתחומים שונים`
+        : ` and notable capabilities across multiple domains`
+      : '';
+
+    return `${intro}${coreIdentity}. ${mainInsight}${contractsSummary}${capabilitiesSummary}.`;
   }
 
   /**
@@ -225,11 +290,29 @@ export class FuturegraphService {
     timeline: string;
     focusAreas: string[];
   } {
+    // Include focus on internal contracts if identified
+    const contractFocus = analysis.internalContracts?.contracts?.length > 0
+      ? language === 'he'
+        ? ['עבודה על חוזים פנימיים וטרנספורמציה שלהם']
+        : ['Working on internal contracts and their transformation']
+      : [];
+
+    // Include capability development if relevant
+    const capabilityFocus = analysis.intellectualEmotionalSocialCapabilities
+      ? language === 'he'
+        ? ['פיתוח וחיזוק יכולות אישיות']
+        : ['Development and strengthening of personal capabilities']
+      : [];
+
     return {
-      goals: analysis.therapeuticGoals || [
-        language === 'he'
-          ? 'להיקבע בשיתוף עם המטופל'
-          : 'To be determined in collaboration with client',
+      goals: [
+        ...(analysis.therapeuticGoals || [
+          language === 'he'
+            ? 'להיקבע בשיתוף עם המטופל'
+            : 'To be determined in collaboration with client',
+        ]),
+        ...contractFocus,
+        ...capabilityFocus,
       ],
       approach:
         analysis.recommendedApproach ||
@@ -241,7 +324,11 @@ export class FuturegraphService {
         (language === 'he'
           ? 'מומלצות 12-16 מפגשים'
           : 'Recommended 12-16 sessions'),
-      focusAreas: analysis.focusAreas || [],
+      focusAreas: [
+        ...(analysis.focusAreas || []),
+        ...contractFocus,
+        ...capabilityFocus,
+      ],
     };
   }
-}
+}  
