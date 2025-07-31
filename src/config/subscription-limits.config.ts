@@ -4,6 +4,7 @@ import { SubscriptionPlan } from '../users/schemas/user.schema';
 export interface SubscriptionLimits {
   futuregraphAnalyze: number;
   aiChat: number;
+  treatmentPlans: number; // Added treatment plans limit
 }
 
 // Configurable limits per subscription tier
@@ -11,14 +12,17 @@ export const SUBSCRIPTION_LIMITS: Record<SubscriptionPlan, SubscriptionLimits> =
   [SubscriptionPlan.FREE]: {
     futuregraphAnalyze: 3,
     aiChat: 10,
+    treatmentPlans: 3, // Free users can create 3 treatment plans
   },
   [SubscriptionPlan.BASIC]: {
     futuregraphAnalyze: 30,
     aiChat: 200,
+    treatmentPlans: 30, // Basic users can create 30 treatment plans
   },
   [SubscriptionPlan.PRO]: {
     futuregraphAnalyze: 100,
     aiChat: 2000,
+    treatmentPlans: 100, // Pro users can create 100 treatment plans
   },
 };
 

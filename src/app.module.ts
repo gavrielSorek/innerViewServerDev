@@ -14,6 +14,7 @@ import { FuturegraphModule } from './futuregraph/futuregraph.module';
 import { AiModule } from './ai/ai.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { UsageTrackingModule } from './usage-tracking/usage-tracking.module';
+import { TreatmentPlansModule } from './treatment-plans/treatment-plans.module';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { UsageTrackingModule } from './usage-tracking/usage-tracking.module';
     AiModule,
     WebhooksModule,
     UsageTrackingModule,
+    TreatmentPlansModule,
   ],
   controllers: [AppController],
   providers: [AppService],
