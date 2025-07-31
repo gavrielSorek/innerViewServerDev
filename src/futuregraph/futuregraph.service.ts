@@ -571,4 +571,296 @@ export class FuturegraphService {
 
     return focusedReport;
   }
+
+  /**
+   * Delete a single analysis session with its image
+   * @param sessionId The session to delete
+   * @param userId The user who owns the session
+   * @returns Result of deletion operation
+   */
+  async deleteSession(
+    sessionId: string,
+    userId: string,
+  ): Promise<{
+    sessionDeleted: boolean;
+    imageDeleted: boolean;
+    error?: string;
+  }> {
+    try {
+      // Verify ownership and delete session
+      const sessionResult = await this.sessionModel.deleteOne({
+        sessionId,
+        userId,
+      }).exec();
+
+      if (sessionResult.deletedCount === 0) {
+        return {
+          sessionDeleted: false,
+          imageDeleted: false,
+          error: 'Session not found or access denied',
+        };
+      }
+
+      // Delete associated image
+      const imageResult = await this.imageModel.deleteOne({
+        sessionId,
+      }).exec();
+
+      return {
+        sessionDeleted: true,
+        imageDeleted: imageResult.deletedCount > 0,
+      };
+    } catch (error) {
+      console.error('Error deleting session:', error);
+      return {
+        sessionDeleted: false,
+        imageDeleted: false,
+        error: error.message,
+      };
+    }
+  }
+
+  /**
+   * Delete a single focus report
+   * @param focusReportId The focus report to delete
+   * @param userId The user who owns the report
+   * @returns Result of deletion operation
+   */
+  async deleteFocusReport(
+    focusReportId: string,
+    userId: string,
+  ): Promise<{
+    deleted: boolean;
+    error?: string;
+  }> {
+    try {
+      const result = await this.focusReportModel.deleteOne({
+        focusReportId,
+        userId,
+      }).exec();
+
+      if (result.deletedCount === 0) {
+        return {
+          deleted: false,
+          error: 'Focus report not found or access denied',
+        };
+      }
+
+      return {
+        deleted: true,
+      };
+    } catch (error) {
+      console.error('Error deleting focus report:', error);
+      return {
+        deleted: false,
+        error: error.message,
+      };
+    }
+  }
+
+  /**
+   * Delete all sessions and focus reports for a specific client
+   * @param clientId The client whose sessions to delete
+   * @param userId The user who owns the sessions
+   * @returns Detailed results of deletion operations
+   */
+  async deleteClientSessions(
+    clientId: string,
+    userId: string,
+  ): Promise<{
+    sessionsDeleted: number;
+    imagesDeleted: number;
+    focusReportsDeleted: number;
+    errors: string[];
+  }> {
+    const errors: string[] = [];
+
+    try {
+      // Get all sessions for this client
+      const sessions = await this.sessionModel
+        .find({ clientId, userId })
+        .select('sessionId')
+        .exec();
+
+      const sessionIds = sessions.map(s => s.sessionId);
+
+      if (sessionIds.length === 0) {
+        return {
+          sessionsDeleted: 0,
+          imagesDeleted: 0,
+          focusReportsDeleted: 0,
+          errors: ['No sessions found for this client'],
+        };
+      }
+
+      // Delete all sessions
+      const sessionResult = await this.sessionModel.deleteMany({
+        clientId,
+        userId,
+      }).exec();
+
+      // Delete all associated images
+      const imageResult = await this.imageModel.deleteMany({
+        sessionId: { $in: sessionIds },
+      }).exec();
+
+      // Delete all focus reports for these sessions
+      const focusResult = await this.focusReportModel.deleteMany({
+        sessionId: { $in: sessionIds },
+        userId,
+      }).exec();
+
+      return {
+        sessionsDeleted: sessionResult.deletedCount || 0,
+        imagesDeleted: imageResult.deletedCount || 0,
+        focusReportsDeleted: focusResult.deletedCount || 0,
+        errors,
+      };
+    } catch (error) {
+      console.error('Error deleting client sessions:', error);
+      errors.push(error.message);
+      return {
+        sessionsDeleted: 0,
+        imagesDeleted: 0,
+        focusReportsDeleted: 0,
+        errors,
+      };
+    }
+  }
+
+  /**
+   * Delete all sessions and focus reports for a user
+   * @param userId The user whose all sessions to delete
+   * @returns Detailed results of deletion operations
+   */
+  async deleteAllUserSessions(
+    userId: string,
+  ): Promise<{
+    sessionsDeleted: number;
+    imagesDeleted: number;
+    focusReportsDeleted: number;
+    errors: string[];
+  }> {
+    const errors: string[] = [];
+
+    try {
+      // Get all sessions for this user
+      const sessions = await this.sessionModel
+        .find({ userId })
+        .select('sessionId')
+        .exec();
+
+      const sessionIds = sessions.map(s => s.sessionId);
+
+      if (sessionIds.length === 0) {
+        return {
+          sessionsDeleted: 0,
+          imagesDeleted: 0,
+          focusReportsDeleted: 0,
+          errors: ['No sessions found for this user'],
+        };
+      }
+
+      // Delete all sessions
+      const sessionResult = await this.sessionModel.deleteMany({
+        userId,
+      }).exec();
+
+      // Delete all associated images
+      const imageResult = await this.imageModel.deleteMany({
+        sessionId: { $in: sessionIds },
+      }).exec();
+
+      // Delete all focus reports
+      const focusResult = await this.focusReportModel.deleteMany({
+        userId,
+      }).exec();
+
+      return {
+        sessionsDeleted: sessionResult.deletedCount || 0,
+        imagesDeleted: imageResult.deletedCount || 0,
+        focusReportsDeleted: focusResult.deletedCount || 0,
+        errors,
+      };
+    } catch (error) {
+      console.error('Error deleting all user sessions:', error);
+      errors.push(error.message);
+      return {
+        sessionsDeleted: 0,
+        imagesDeleted: 0,
+        focusReportsDeleted: 0,
+        errors,
+      };
+    }
+  }
+
+  /**
+   * Get count of sessions and reports for a client (useful before deletion)
+   * @param clientId The client ID
+   * @param userId The user ID
+   * @returns Count of sessions and reports
+   */
+  async getClientSessionCounts(
+    clientId: string,
+    userId: string,
+  ): Promise<{
+    sessions: number;
+    focusReports: number;
+  }> {
+    const sessions = await this.sessionModel.countDocuments({
+      clientId,
+      userId,
+    }).exec();
+
+    const sessionIds = await this.sessionModel
+      .find({ clientId, userId })
+      .select('sessionId')
+      .exec()
+      .then(docs => docs.map(d => d.sessionId));
+
+    const focusReports = sessionIds.length > 0
+      ? await this.focusReportModel.countDocuments({
+          sessionId: { $in: sessionIds },
+          userId,
+        }).exec()
+      : 0;
+
+    return {
+      sessions,
+      focusReports,
+    };
+  }
+
+  /**
+   * Get count of all sessions and reports for a user (useful before deletion)
+   * @param userId The user ID
+   * @returns Count of sessions and reports
+   */
+  async getUserSessionCounts(
+    userId: string,
+  ): Promise<{
+    sessions: number;
+    focusReports: number;
+    clients: number;
+  }> {
+    const sessions = await this.sessionModel.countDocuments({
+      userId,
+    }).exec();
+
+    const focusReports = await this.focusReportModel.countDocuments({
+      userId,
+    }).exec();
+
+    // Get unique client count
+    const clients = await this.sessionModel
+      .distinct('clientId', { userId })
+      .exec()
+      .then(ids => ids.length);
+
+    return {
+      sessions,
+      focusReports,
+      clients,
+    };
+  }
 }

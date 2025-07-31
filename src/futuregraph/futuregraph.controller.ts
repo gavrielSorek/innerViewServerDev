@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Post,
+  Delete,
   Body,
   Param,
   UseGuards,
@@ -370,5 +371,169 @@ export class FuturegraphController {
   async getReport(@Param('sessionId') sessionId: string) {
     const result = await this.futuregraphService.getAnalysisSession(sessionId, false);
     return result.report;
+  }
+
+  /**
+   * Legacy focus endpoint - kept for backward compatibility
+   */
+  @Get('focus')
+  async focusAnalysisLegacy(@Query() query: FocusAnalysisDto) {
+    try {
+      const focusedAnalysis = await this.futuregraphService.getFocusedAnalysis(
+        query.sessionId,
+        query.focus,
+        query.language,
+      );
+      return focusedAnalysis;
+    } catch (error) {
+      // Handle known errors, like session not found
+      if (error.status === 404) {
+        throw new HttpException(error.message, HttpStatus.NOT_FOUND);
+      }
+      // Handle other potential errors
+      throw new HttpException(
+        'An error occurred while processing the focus analysis.',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  /**
+   * Delete a single analysis session
+   */
+  @Delete('session/:sessionId')
+  async deleteSession(
+    @Request() req: any,
+    @Param('sessionId') sessionId: string,
+  ) {
+    const userId = req.user.uid || req.user.dbUser?.firebaseUid;
+
+    const result = await this.futuregraphService.deleteSession(
+      sessionId,
+      userId,
+    );
+
+    if (!result.sessionDeleted && result.error) {
+      throw new HttpException(
+        result.error,
+        result.error.includes('not found') ? HttpStatus.NOT_FOUND : HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    return {
+      success: result.sessionDeleted,
+      message: result.sessionDeleted 
+        ? 'Session and associated data deleted successfully' 
+        : 'Failed to delete session',
+      details: result,
+    };
+  }
+
+  /**
+   * Delete a single focus report
+   */
+  @Delete('focus-report/:focusReportId')
+  async deleteFocusReport(
+    @Request() req: any,
+    @Param('focusReportId') focusReportId: string,
+  ) {
+    const userId = req.user.uid || req.user.dbUser?.firebaseUid;
+
+    const result = await this.futuregraphService.deleteFocusReport(
+      focusReportId,
+      userId,
+    );
+
+    if (!result.deleted && result.error) {
+      throw new HttpException(
+        result.error,
+        result.error.includes('not found') ? HttpStatus.NOT_FOUND : HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    return {
+      success: result.deleted,
+      message: result.deleted 
+        ? 'Focus report deleted successfully' 
+        : 'Failed to delete focus report',
+    };
+  }
+
+  /**
+   * Delete all sessions for a specific client
+   */
+  @Delete('client/:clientId/sessions')
+  async deleteClientSessions(
+    @Request() req: any,
+    @Param('clientId') clientId: string,
+  ) {
+    const userId = req.user.uid || req.user.dbUser?.firebaseUid;
+
+    const result = await this.futuregraphService.deleteClientSessions(
+      clientId,
+      userId,
+    );
+
+    return {
+      success: result.sessionsDeleted > 0 || result.errors.length === 0,
+      message: `Deleted ${result.sessionsDeleted} sessions, ${result.imagesDeleted} images, and ${result.focusReportsDeleted} focus reports for client`,
+      details: result,
+    };
+  }
+
+  /**
+   * Delete all sessions for the current user
+   */
+  @Delete('all-sessions')
+  async deleteAllUserSessions(
+    @Request() req: any,
+  ) {
+    const userId = req.user.uid || req.user.dbUser?.firebaseUid;
+
+    const result = await this.futuregraphService.deleteAllUserSessions(userId);
+
+    return {
+      success: result.sessionsDeleted > 0 || result.errors.length === 0,
+      message: `Deleted ${result.sessionsDeleted} sessions, ${result.imagesDeleted} images, and ${result.focusReportsDeleted} focus reports`,
+      details: result,
+    };
+  }
+
+  /**
+   * Get deletion preview for a client (counts before deletion)
+   */
+  @Get('client/:clientId/deletion-preview')
+  async getClientDeletionPreview(
+    @Request() req: any,
+    @Param('clientId') clientId: string,
+  ) {
+    const userId = req.user.uid || req.user.dbUser?.firebaseUid;
+
+    const counts = await this.futuregraphService.getClientSessionCounts(
+      clientId,
+      userId,
+    );
+
+    return {
+      message: `This client has ${counts.sessions} sessions and ${counts.focusReports} focus reports that will be deleted`,
+      ...counts,
+    };
+  }
+
+  /**
+   * Get deletion preview for all user sessions (counts before deletion)
+   */
+  @Get('deletion-preview')
+  async getUserDeletionPreview(
+    @Request() req: any,
+  ) {
+    const userId = req.user.uid || req.user.dbUser?.firebaseUid;
+
+    const counts = await this.futuregraphService.getUserSessionCounts(userId);
+
+    return {
+      message: `You have ${counts.sessions} sessions and ${counts.focusReports} focus reports across ${counts.clients} clients that will be deleted`,
+      ...counts,
+    };
   }
 }
