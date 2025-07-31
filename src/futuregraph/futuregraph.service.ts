@@ -14,6 +14,10 @@ import {
   FuturegraphImage,
   FuturegraphImageDocument,
 } from './schemas/futuregraph-image.schema';
+import {
+  FuturegraphFocusReport,
+  FuturegraphFocusReportDocument,
+} from './schemas/futuregraph-focus-report.schema';
 import { AiService } from './ai.service';
 import { StartSessionDto } from './dto/start-session.dto';
 import { LanguageService, SupportedLanguage } from '../common/language.service';
@@ -25,6 +29,8 @@ export class FuturegraphService {
     private readonly sessionModel: Model<FuturegraphSessionDocument>,
     @InjectModel(FuturegraphImage.name)
     private readonly imageModel: Model<FuturegraphImageDocument>,
+    @InjectModel(FuturegraphFocusReport.name)
+    private readonly focusReportModel: Model<FuturegraphFocusReportDocument>,
     private readonly aiService: AiService,
     private readonly languageService: LanguageService,
   ) {}
@@ -155,6 +161,211 @@ export class FuturegraphService {
       status: s.status,
       language: s.language,
     }));
+  }
+
+  /**
+   * Create or retrieve a focused analysis report
+   */
+  async createFocusedAnalysis(
+    sessionId: string,
+    focus: string,
+    language: string,
+    userId: string,
+  ): Promise<{
+    focusReportId: string;
+    analysis: any;
+    report: any;
+  }> {
+    // Check if we already have this focus report
+    const existingReport = await this.focusReportModel.findOne({
+      sessionId,
+      focus,
+      language,
+    }).exec();
+
+    if (existingReport) {
+      return {
+        focusReportId: existingReport.focusReportId,
+        analysis: existingReport.focusedAnalysis,
+        report: existingReport.focusedReport,
+      };
+    }
+
+    // Get the original session
+    const session = await this.sessionModel.findOne({ sessionId }).exec();
+    if (!session || !session.completeAnalysis) {
+      throw new NotFoundException(`Session with ID "${sessionId}" not found or has no analysis.`);
+    }
+
+    // Verify user owns this session
+    if (session.userId !== userId) {
+      throw new NotFoundException(`Session with ID "${sessionId}" not found.`);
+    }
+
+    // Generate focus report ID
+    const focusReportId = `fg_focus_${Date.now()}_${Math.random()
+      .toString(36)
+      .substr(2, 9)}`;
+
+    try {
+      // Generate focused analysis using AI
+      const focusedAnalysis = await this.aiService.getFocusedAnalysis(
+        session.completeAnalysis,
+        focus,
+        language,
+      );
+
+      // Generate focused report
+      const focusedReport = this.generateReport(
+        focusedAnalysis,
+        session,
+        language as SupportedLanguage,
+      );
+
+      // Save the focus report
+      const focusReport = new this.focusReportModel({
+        focusReportId,
+        sessionId,
+        userId,
+        clientId: session.clientId,
+        focus,
+        language,
+        focusedAnalysis,
+        focusedReport,
+        status: 'completed',
+      });
+
+      await focusReport.save();
+
+      return {
+        focusReportId,
+        analysis: focusedAnalysis,
+        report: focusedReport,
+      };
+    } catch (error) {
+      // Save failed attempt
+      const focusReport = new this.focusReportModel({
+        focusReportId,
+        sessionId,
+        userId,
+        clientId: session.clientId,
+        focus,
+        language,
+        focusedAnalysis: {},
+        focusedReport: {},
+        status: 'failed',
+        error: error.message,
+      });
+
+      await focusReport.save();
+      throw error;
+    }
+  }
+
+  /**
+   * Get all focus reports for a user
+   */
+  async getUserFocusReports(
+    userId: string,
+    limit = 20,
+  ): Promise<Array<{
+    focusReportId: string;
+    sessionId: string;
+    clientId: string;
+    focus: string;
+    language: string;
+    createdAt: Date;
+    status: string;
+  }>> {
+    const reports = await this.focusReportModel
+      .find({ userId })
+      .select('focusReportId sessionId clientId focus language createdAt status')
+      .sort('-createdAt')
+      .limit(limit)
+      .exec();
+
+    return reports.map(r => {
+      const doc = r as FuturegraphFocusReportDocument;
+      return {
+        focusReportId: doc.focusReportId,
+        sessionId: doc.sessionId,
+        clientId: doc.clientId,
+        focus: doc.focus,
+        language: doc.language,
+        createdAt: doc.createdAt,
+        status: doc.status,
+      };
+    });
+  }
+
+  /**
+   * Get focus reports for a specific session
+   */
+  async getSessionFocusReports(
+    sessionId: string,
+    userId: string,
+  ): Promise<Array<{
+    focusReportId: string;
+    focus: string;
+    language: string;
+    createdAt: Date;
+  }>> {
+    const reports = await this.focusReportModel
+      .find({ sessionId, userId })
+      .select('focusReportId focus language createdAt')
+      .sort('-createdAt')
+      .exec();
+
+    return reports.map(r => {
+      const doc = r as FuturegraphFocusReportDocument;
+      return {
+        focusReportId: doc.focusReportId,
+        focus: doc.focus,
+        language: doc.language,
+        createdAt: doc.createdAt,
+      };
+    });
+  }
+
+  /**
+   * Get a specific focus report by ID
+   */
+  async getFocusReportById(
+    focusReportId: string,
+    userId: string,
+  ): Promise<{
+    focusReportId: string;
+    sessionId: string;
+    clientId: string;
+    focus: string;
+    language: string;
+    status: string;
+    analysis: any;
+    report: any;
+    createdAt: Date;
+  }> {
+    const focusReport = await this.focusReportModel.findOne({
+      focusReportId,
+      userId,
+    }).exec();
+
+    if (!focusReport) {
+      throw new NotFoundException('Focus report not found');
+    }
+
+    const doc = focusReport as FuturegraphFocusReportDocument;
+
+    return {
+      focusReportId: doc.focusReportId,
+      sessionId: doc.sessionId,
+      clientId: doc.clientId,
+      focus: doc.focus,
+      language: doc.language,
+      status: doc.status,
+      analysis: doc.focusedAnalysis,
+      report: doc.focusedReport,
+      createdAt: doc.createdAt,
+    };
   }
 
   /**
@@ -332,12 +543,16 @@ export class FuturegraphService {
     };
   }
 
+  /**
+   * Legacy method for backward compatibility - redirects to createFocusedAnalysis
+   */
   async getFocusedAnalysis(
     sessionId: string,
     focus: string,
     language: string,
   ): Promise<any> {
-    // Use Mongoose to find the session by sessionId
+    // This method is deprecated in favor of createFocusedAnalysis
+    // but kept for backward compatibility
     const session = await this.sessionModel.findOne({ sessionId }).exec();
 
     if (!session || !session.completeAnalysis) {

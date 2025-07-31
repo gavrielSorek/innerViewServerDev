@@ -1,10 +1,4 @@
-// Modified FutureGraph controller to support optional inclusion of handwriting images
-// in session responses. The new implementation allows clients to specify a
-// `includeImage` query parameter when retrieving a session. If the parameter
-// evaluates to true, the corresponding handwriting image is looked up from the
-// new FuturegraphImage collection and included in the response. Otherwise the
-// image is omitted to reduce payload size.
-
+// src/futuregraph/futuregraph.controller.ts
 import {
   Controller,
   Get,
@@ -180,6 +174,166 @@ export class FuturegraphController {
   }
 
   /**
+   * Create or retrieve a focused analysis report
+   */
+  @Post('focus')
+  async focusAnalysis(
+    @Request() req: any,
+    @Body() body: FocusAnalysisDto,
+    @Ip() ip: string,
+    @Headers('user-agent') userAgent: string,
+  ) {
+    const userId = req.user.uid || req.user.dbUser?.firebaseUid;
+
+    try {
+      // Track usage for focus analysis (counts as a FutureGraph analysis)
+      await this.usageTrackingService.enforceUsageLimit(
+        userId,
+        UsageType.FUTUREGRAPH_ANALYZE,
+        {
+          sessionId: body.sessionId,
+          focus: body.focus,
+          language: body.language,
+          type: 'focus_analysis',
+        },
+        ip,
+        userAgent,
+      );
+
+      const startTime = Date.now();
+      
+      // Create or retrieve focused analysis
+      const result = await this.futuregraphService.createFocusedAnalysis(
+        body.sessionId,
+        body.focus,
+        body.language,
+        userId,
+      );
+
+      const responseTime = Date.now() - startTime;
+
+      // Track successful completion
+      await this.usageTrackingService.trackUsage(
+        userId,
+        UsageType.FUTUREGRAPH_ANALYZE,
+        {
+          focusReportId: result.focusReportId,
+          sessionId: body.sessionId,
+          focus: body.focus,
+          responseTime,
+          success: true,
+          type: 'focus_analysis',
+        },
+      );
+
+      // Get updated usage stats
+      const usageCheck = await this.usageTrackingService.checkUsageLimit(
+        userId,
+        UsageType.FUTUREGRAPH_ANALYZE,
+      );
+
+      // Format response similar to analyze endpoint
+      const response: any = {
+        focusReportId: result.focusReportId,
+        sessionId: body.sessionId,
+        focus: body.focus,
+        language: body.language,
+        status: 'completed',
+        analysis: result.analysis,
+        report: result.report,
+      };
+
+      // Include usage info if approaching limit
+      if (usageCheck.remaining <= 1 || usageCheck.message) {
+        response.usage = {
+          remaining: usageCheck.remaining,
+          limit: usageCheck.limit,
+          message: usageCheck.message,
+          upgradePrompt: usageCheck.upgradePrompt,
+        };
+      }
+
+      return response;
+    } catch (error) {
+      // Handle known errors
+      if (error.status === 404) {
+        throw new HttpException(error.message, HttpStatus.NOT_FOUND);
+      }
+      if (error.status === 403) {
+        throw error; // Usage limit exceeded
+      }
+      // Handle other potential errors
+      throw new HttpException(
+        'An error occurred while processing the focus analysis.',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  /**
+   * Get all focus reports for the current user
+   */
+  @Get('my-focus-reports')
+  async getMyFocusReports(
+    @Request() req: any,
+    @Query('limit') limit?: string,
+  ) {
+    const userId = req.user.uid || req.user.dbUser?.firebaseUid;
+    const reportLimit = limit ? parseInt(limit, 10) : 20;
+
+    const reports = await this.futuregraphService.getUserFocusReports(
+      userId,
+      reportLimit,
+    );
+
+    return {
+      userId,
+      reports,
+      total: reports.length,
+    };
+  }
+
+  /**
+   * Get focus reports for a specific session
+   */
+  @Get('session/:sessionId/focus-reports')
+  async getSessionFocusReports(
+    @Request() req: any,
+    @Param('sessionId') sessionId: string,
+  ) {
+    const userId = req.user.uid || req.user.dbUser?.firebaseUid;
+
+    const reports = await this.futuregraphService.getSessionFocusReports(
+      sessionId,
+      userId,
+    );
+
+    return {
+      sessionId,
+      reports,
+      total: reports.length,
+    };
+  }
+
+  /**
+   * Get a specific focus report by ID
+   */
+  @Get('focus-report/:focusReportId')
+  async getFocusReport(
+    @Request() req: any,
+    @Param('focusReportId') focusReportId: string,
+  ) {
+    const userId = req.user.uid || req.user.dbUser?.firebaseUid;
+
+    const report = await this.futuregraphService.getFocusReportById(
+      focusReportId,
+      userId,
+    );
+
+    return report;
+  }
+
+  /**
    * Legacy endpoints for backward compatibility - redirect to new flow
    */
   @Post('start-session')
@@ -216,27 +370,5 @@ export class FuturegraphController {
   async getReport(@Param('sessionId') sessionId: string) {
     const result = await this.futuregraphService.getAnalysisSession(sessionId, false);
     return result.report;
-  }
-
-   @Get('focus')
-  async focusAnalysis(@Query() query: FocusAnalysisDto) {
-    try {
-      const focusedAnalysis = await this.futuregraphService.getFocusedAnalysis(
-        query.sessionId,
-        query.focus,
-        query.language,
-      );
-      return focusedAnalysis;
-    } catch (error) {
-      // Handle known errors, like session not found
-      if (error.status === 404) {
-        throw new HttpException(error.message, HttpStatus.NOT_FOUND);
-      }
-      // Handle other potential errors
-      throw new HttpException(
-        'An error occurred while processing the focus analysis.',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
   }
 }

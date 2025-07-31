@@ -1,7 +1,4 @@
-// Module definition for FutureGraph. Registers both the session and image
-// schemas so that images are stored separately from sessions. This reduces
-// the amount of data returned when querying sessions without images.
-
+// src/futuregraph/futuregraph.module.ts
 import { Module, Global } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ConfigModule } from '@nestjs/config';
@@ -15,6 +12,10 @@ import {
   FuturegraphImage,
   FuturegraphImageSchema,
 } from './schemas/futuregraph-image.schema';
+import {
+  FuturegraphFocusReport,
+  FuturegraphFocusReportSchema,
+} from './schemas/futuregraph-focus-report.schema';
 import { AiService } from './ai.service';
 import { LanguageService } from '../common/language.service';
 import { UsersModule } from '../users/users.module';
@@ -29,6 +30,7 @@ import { UsageTrackingModule } from '../usage-tracking/usage-tracking.module';
     MongooseModule.forFeature([
       { name: FuturegraphSession.name, schema: FuturegraphSessionSchema },
       { name: FuturegraphImage.name, schema: FuturegraphImageSchema },
+      { name: FuturegraphFocusReport.name, schema: FuturegraphFocusReportSchema },
     ]),
   ],
   controllers: [FuturegraphController],
