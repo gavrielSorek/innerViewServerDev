@@ -13,6 +13,7 @@ import {
   Headers,
   HttpException,
   HttpStatus,
+  Patch,
 } from '@nestjs/common';
 import { FuturegraphService } from './futuregraph.service';
 import { AuthGuard } from '../auth/auth.guard';
@@ -22,6 +23,7 @@ import { SubscriptionGuard, RequireSubscription } from '../common/guards/subscri
 import { UsageTrackingService } from '../usage-tracking/usage-tracking.service';
 import { UsageType } from '../usage-tracking/schemas/usage-tracking.schema';
 import { FocusAnalysisDto } from './dto/focus-analysis.dto';
+import { UpdateNameDto } from './dto/update-name.dto';
 
 @Controller('ai/futuregraph')
 @UseGuards(AuthGuard)
@@ -118,6 +120,7 @@ export class FuturegraphController {
     const result = await this.futuregraphService.getAnalysisSession(sessionId, include);
     const response: any = {
       sessionId: result.session.sessionId,
+      name: result.session.name,
       clientId: result.session.clientId,
       createdAt: result.session.startTime,
       completedAt: result.session.completedAt,
@@ -171,6 +174,38 @@ export class FuturegraphController {
       },
       message: usageCheck.message,
       upgradePrompt: usageCheck.upgradePrompt,
+    };
+  }
+
+  /**
+   * Update session name
+   */
+  @Patch('session/:sessionId/name')
+  async updateSessionName(
+    @Request() req: any,
+    @Param('sessionId') sessionId: string,
+    @Body() updateNameDto: UpdateNameDto,
+  ) {
+    const userId = req.user.uid || req.user.dbUser?.firebaseUid;
+
+    const result = await this.futuregraphService.updateSessionName(
+      sessionId,
+      userId,
+      updateNameDto.name,
+    );
+
+    if (!result.success) {
+      throw new HttpException(
+        result.error || 'Failed to update session name',
+        result.error?.includes('not found') ? HttpStatus.NOT_FOUND : HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    return {
+      success: true,
+      sessionId,
+      name: result.name,
+      message: 'Session name updated successfully',
     };
   }
 
@@ -332,6 +367,38 @@ export class FuturegraphController {
     );
 
     return report;
+  }
+
+  /**
+   * Update focus report name
+   */
+  @Patch('focus-report/:focusReportId/name')
+  async updateFocusReportName(
+    @Request() req: any,
+    @Param('focusReportId') focusReportId: string,
+    @Body() updateNameDto: UpdateNameDto,
+  ) {
+    const userId = req.user.uid || req.user.dbUser?.firebaseUid;
+
+    const result = await this.futuregraphService.updateFocusReportName(
+      focusReportId,
+      userId,
+      updateNameDto.name,
+    );
+
+    if (!result.success) {
+      throw new HttpException(
+        result.error || 'Failed to update focus report name',
+        result.error?.includes('not found') ? HttpStatus.NOT_FOUND : HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    return {
+      success: true,
+      focusReportId,
+      name: result.name,
+      message: 'Focus report name updated successfully',
+    };
   }
 
   /**

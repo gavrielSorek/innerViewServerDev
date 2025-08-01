@@ -1,4 +1,5 @@
 // src/futuregraph/schemas/futuregraph-focus-report.schema.ts
+
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
 
@@ -12,6 +13,10 @@ export class FuturegraphFocusReport {
   /** Reference to the original session */
   @Prop({ required: true, index: true })
   sessionId!: string;
+
+  /** User-editable name for the focus report */
+  @Prop({ required: true, maxlength: 256 })
+  name!: string;
 
   /** User who created this focus report */
   @Prop({ required: true, index: true })

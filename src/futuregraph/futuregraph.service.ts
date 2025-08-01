@@ -49,10 +49,13 @@ export class FuturegraphService {
       .toString(36)
       .substr(2, 9)}`;
     const language: SupportedLanguage = this.languageService.validate(dto.language);
+    // Generate default name
+    const sessionName: string = this.generateSessionName(dto.clientContext, language);
 
     // Persist the session without the handwriting image
     const session = new this.sessionModel({
       sessionId,
+      name: sessionName, // ADD THIS LINE
       userId: dto.userId,
       clientId: dto.clientId,
       clientContext: dto.clientContext,
@@ -144,6 +147,7 @@ export class FuturegraphService {
   ): Promise<
     {
       sessionId: string;
+      name: string;
       createdAt: Date;
       status: string;
       language: string;
@@ -151,12 +155,13 @@ export class FuturegraphService {
   > {
     const sessions = await this.sessionModel
       .find({ clientId, userId })
-      .select('sessionId startTime status language')
+      .select('sessionId name startTime status language')
       .sort('-startTime')
       .exec();
 
     return sessions.map((s) => ({
       sessionId: s.sessionId,
+      name: s.name,
       createdAt: s.startTime,
       status: s.status,
       language: s.language,
@@ -207,6 +212,9 @@ export class FuturegraphService {
       .toString(36)
       .substr(2, 9)}`;
 
+    // Generate default name
+    const focusReportName = this.generateFocusReportName(focus, language);
+
     try {
       // Generate focused analysis using AI
       const focusedAnalysis = await this.aiService.getFocusedAnalysis(
@@ -225,6 +233,7 @@ export class FuturegraphService {
       // Save the focus report
       const focusReport = new this.focusReportModel({
         focusReportId,
+        name: focusReportName,
         sessionId,
         userId,
         clientId: session.clientId,
@@ -272,6 +281,7 @@ export class FuturegraphService {
     focusReportId: string;
     sessionId: string;
     clientId: string;
+    name: string;
     focus: string;
     language: string;
     createdAt: Date;
@@ -279,7 +289,7 @@ export class FuturegraphService {
   }>> {
     const reports = await this.focusReportModel
       .find({ userId })
-      .select('focusReportId sessionId clientId focus language createdAt status')
+      .select('focusReportId sessionId clientId name focus language createdAt status')
       .sort('-createdAt')
       .limit(limit)
       .exec();
@@ -290,6 +300,7 @@ export class FuturegraphService {
         focusReportId: doc.focusReportId,
         sessionId: doc.sessionId,
         clientId: doc.clientId,
+        name: doc.name,
         focus: doc.focus,
         language: doc.language,
         createdAt: doc.createdAt,
@@ -301,18 +312,19 @@ export class FuturegraphService {
   /**
    * Get focus reports for a specific session
    */
-  async getSessionFocusReports(
+   async getSessionFocusReports(
     sessionId: string,
     userId: string,
   ): Promise<Array<{
     focusReportId: string;
+    name: string;
     focus: string;
     language: string;
     createdAt: Date;
   }>> {
     const reports = await this.focusReportModel
       .find({ sessionId, userId })
-      .select('focusReportId focus language createdAt')
+      .select('focusReportId name focus language createdAt')
       .sort('-createdAt')
       .exec();
 
@@ -320,6 +332,7 @@ export class FuturegraphService {
       const doc = r as FuturegraphFocusReportDocument;
       return {
         focusReportId: doc.focusReportId,
+        name: doc.name,
         focus: doc.focus,
         language: doc.language,
         createdAt: doc.createdAt,
@@ -862,5 +875,90 @@ export class FuturegraphService {
       focusReports,
       clients,
     };
+  }
+
+  /**
+   * Generate default name for a session
+   */
+  private generateSessionName(clientContext: any, language: SupportedLanguage): string {
+    const clientName = clientContext?.name || (language === 'he' ? 'לקוח' : 'Client');
+    const date = new Date().toLocaleDateString(language === 'he' ? 'he-IL' : 'en-US');
+    return `${clientName} - ${date}`;
+  }
+
+  /**
+   * Generate default name for a focus report
+   */
+  private generateFocusReportName(focus: string, language: string): string {
+    const date = new Date().toLocaleDateString(language === 'he' ? 'he-IL' : 'en-US');
+    return `Focus: ${focus} - ${date}`;
+  }
+
+  /**
+   * Update session name
+   */
+  async updateSessionName(
+    sessionId: string,
+    userId: string,
+    name: string,
+  ): Promise<{ success: boolean; name?: string; error?: string }> {
+    try {
+      const result = await this.sessionModel.updateOne(
+        { sessionId, userId },
+        { name },
+      ).exec();
+
+      if (result.matchedCount === 0) {
+        return {
+          success: false,
+          error: 'Session not found or access denied',
+        };
+      }
+
+      return {
+        success: true,
+        name,
+      };
+    } catch (error) {
+      console.error('Error updating session name:', error);
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+  }
+
+  /**
+   * Update focus report name
+   */
+  async updateFocusReportName(
+    focusReportId: string,
+    userId: string,
+    name: string,
+  ): Promise<{ success: boolean; name?: string; error?: string }> {
+    try {
+      const result = await this.focusReportModel.updateOne(
+        { focusReportId, userId },
+        { name },
+      ).exec();
+
+      if (result.matchedCount === 0) {
+        return {
+          success: false,
+          error: 'Focus report not found or access denied',
+        };
+      }
+
+      return {
+        success: true,
+        name,
+      };
+    } catch (error) {
+      console.error('Error updating focus report name:', error);
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
   }
 }
