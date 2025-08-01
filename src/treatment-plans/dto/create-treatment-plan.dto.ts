@@ -1,9 +1,14 @@
 // src/treatment-plans/dto/create-treatment-plan.dto.ts
-import { IsString, IsNumber, IsOptional, IsArray, Min, Max } from 'class-validator';
+import { IsString, IsNumber, IsOptional, IsArray, Min, Max, ValidateIf } from 'class-validator';
 
 export class CreateTreatmentPlanDto {
+  @ValidateIf(o => !o.focusReportId)
   @IsString()
-  futuregraphSessionId: string;
+  futuregraphSessionId?: string;
+
+  @ValidateIf(o => !o.futuregraphSessionId)
+  @IsString()
+  focusReportId?: string;
 
   @IsNumber()
   @Min(1)

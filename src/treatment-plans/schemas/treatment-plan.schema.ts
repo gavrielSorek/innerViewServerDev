@@ -33,6 +33,18 @@ export class TreatmentPlan {
   @Prop({ required: true, index: true })
   futuregraphSessionId!: string;
 
+  /** Optional reference to a focus report if plan was created from it */
+  @Prop({ index: true })
+  focusReportId?: string;
+
+  /** Source type: 'session' or 'focus-report' */
+  @Prop({ required: true, default: 'session' })
+  sourceType!: 'session' | 'focus-report';
+
+  /** Focus area if created from focus report */
+  @Prop()
+  focusArea?: string;
+
   /** User who created this treatment plan */
   @Prop({ required: true, index: true })
   userId!: string;
@@ -96,4 +108,4 @@ export const TreatmentPlanSchema = SchemaFactory.createForClass(TreatmentPlan);
 // Create indexes for efficient querying
 TreatmentPlanSchema.index({ userId: 1, createdAt: -1 });
 TreatmentPlanSchema.index({ clientId: 1, createdAt: -1 });
-TreatmentPlanSchema.index({ futuregraphSessionId: 1 });
+TreatmentPlanSchema.index({ futuregraphSessionId: 1 }); 

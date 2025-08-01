@@ -32,6 +32,7 @@ export class TreatmentPlansController {
 
   /**
    * Create a new treatment plan
+   * Can be created from either a FutureGraph session or a focus report
    */
   @Post()
   @HttpCode(HttpStatus.CREATED)
@@ -50,6 +51,7 @@ export class TreatmentPlansController {
       {
         feature: 'treatment_plan',
         sessionId: createDto.futuregraphSessionId,
+        focusReportId: createDto.focusReportId,
         numberOfSessions: createDto.numberOfSessions,
       },
       ip,

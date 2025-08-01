@@ -14,6 +14,7 @@ interface GeneratePlanInput {
   overallGoal?: string;
   preferredMethods: string[];
   language: SupportedLanguage;
+  focusArea?: string; // Added focus area
 }
 
 interface GeneratedPlan {
@@ -118,6 +119,7 @@ Return a plan in JSON format with all sessions detailed.`;
       overallGoal,
       preferredMethods,
       language,
+      focusArea,
     } = input;
 
     const clientInfo = `
@@ -127,12 +129,23 @@ Main Challenges: ${JSON.stringify(analysis.limitingBeliefs)}
 Internal Contracts: ${JSON.stringify(analysis.internalContracts?.contracts || [])}
 Capabilities: ${JSON.stringify(analysis.intellectualEmotionalSocialCapabilities)}
 Treatment Recommendations from Analysis: ${JSON.stringify(analysis.treatmentRecommendations || [])}
+${focusArea ? `\nSPECIFIC FOCUS AREA: ${focusArea}` : ''}
 `;
+
+    const focusInstruction = focusArea
+      ? language === 'he'
+        ? `\n\nחשוב: תוכנית הטיפול צריכה להתמקד במיוחד בתחום: ${focusArea}
+כל המפגשים צריכים לתרום להתקדמות בתחום זה.
+המטרה הכללית חייבת להתייחס לתחום המיקוד הזה.`
+        : `\n\nIMPORTANT: The treatment plan should specifically focus on: ${focusArea}
+All sessions should contribute to progress in this area.
+The overall goal must relate to this focus area.`
+      : '';
 
     const requirements = language === 'he'
       ? `בנה תוכנית טיפול של ${numberOfSessions} מפגשים, כל מפגש ${sessionDuration} דקות.
-${overallGoal ? `מטרת-על: ${overallGoal}` : 'הגדר מטרת-על מתאימה'}
-${preferredMethods.length > 0 ? `שיטות מועדפות: ${preferredMethods.join(', ')}` : 'בחר שיטות מתאימות'}
+${overallGoal ? `מטרת-על: ${overallGoal}` : focusArea ? `הגדר מטרת-על הקשורה ל: ${focusArea}` : 'הגדר מטרת-על מתאימה'}
+${preferredMethods.length > 0 ? `שיטות מועדפות: ${preferredMethods.join(', ')}` : 'בחר שיטות מתאימות'}${focusInstruction}
 
 עבור כל מפגש ספק:
 - מטרה טיפולית ממוקדת
@@ -144,8 +157,8 @@ ${preferredMethods.length > 0 ? `שיטות מועדפות: ${preferredMethods.j
 
 כל התוכן בעברית בלבד.`
       : `Create a treatment plan for ${numberOfSessions} sessions, each ${sessionDuration} minutes.
-${overallGoal ? `Overall goal: ${overallGoal}` : 'Define an appropriate overall goal'}
-${preferredMethods.length > 0 ? `Preferred methods: ${preferredMethods.join(', ')}` : 'Choose appropriate methods'}
+${overallGoal ? `Overall goal: ${overallGoal}` : focusArea ? `Define an overall goal related to: ${focusArea}` : 'Define an appropriate overall goal'}
+${preferredMethods.length > 0 ? `Preferred methods: ${preferredMethods.join(', ')}` : 'Choose appropriate methods'}${focusInstruction}
 
 For each session provide:
 - Focused therapeutic goal

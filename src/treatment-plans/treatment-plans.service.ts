@@ -36,14 +36,65 @@ export class TreatmentPlansService {
     userId: string,
     createDto: CreateTreatmentPlanDto,
   ): Promise<TreatmentPlanResponse> {
-    // Fetch the FutureGraph session and verify ownership
-    const { session, analysis, report } = await this.futuregraphService.getAnalysisSession(
-      createDto.futuregraphSessionId,
-      false,
-    );
+    // Validate that either futuregraphSessionId or focusReportId is provided
+    if (!createDto.futuregraphSessionId && !createDto.focusReportId) {
+      throw new BadRequestException('Either futuregraphSessionId or focusReportId must be provided');
+    }
 
-    if (session.userId !== userId) {
-      throw new ForbiddenException('You can only create treatment plans for your own sessions');
+    if (createDto.futuregraphSessionId && createDto.focusReportId) {
+      throw new BadRequestException('Only one of futuregraphSessionId or focusReportId should be provided');
+    }
+
+    let session: any;
+    let analysis: any;
+    let report: any;
+    let sourceType: 'session' | 'focus-report';
+    let focusArea: string | undefined;
+    let focusReportId: string | undefined;
+
+    if (createDto.focusReportId) {
+      // Creating from focus report
+      sourceType = 'focus-report';
+      focusReportId = createDto.focusReportId;
+      
+      // Get the focus report
+      const focusReport = await this.futuregraphService.getFocusReportById(
+        createDto.focusReportId,
+        userId,
+      );
+
+      // Get the original session to verify ownership and get client context
+      const sessionData = await this.futuregraphService.getAnalysisSession(
+        focusReport.sessionId,
+        false,
+      );
+
+      if (sessionData.session.userId !== userId) {
+        throw new ForbiddenException('You can only create treatment plans for your own sessions');
+      }
+
+      session = sessionData.session;
+      analysis = focusReport.analysis; // Use focused analysis
+      report = focusReport.report; // Use focused report
+      focusArea = focusReport.focus;
+      
+      // Override the session ID reference
+      createDto.futuregraphSessionId = focusReport.sessionId;
+    } else {
+      // Creating from session (existing logic)
+      sourceType = 'session';
+      const sessionData = await this.futuregraphService.getAnalysisSession(
+        createDto.futuregraphSessionId!,
+        false,
+      );
+
+      if (sessionData.session.userId !== userId) {
+        throw new ForbiddenException('You can only create treatment plans for your own sessions');
+      }
+
+      session = sessionData.session;
+      analysis = sessionData.analysis;
+      report = sessionData.report;
     }
 
     // Generate unique plan ID
@@ -62,12 +113,16 @@ export class TreatmentPlansService {
       overallGoal: createDto.overallGoal,
       preferredMethods: createDto.preferredMethods || [],
       language,
+      focusArea, // Pass focus area to AI service
     });
 
     // Create the treatment plan document
     const treatmentPlan = new this.treatmentPlanModel({
       planId,
       futuregraphSessionId: createDto.futuregraphSessionId,
+      focusReportId,
+      sourceType,
+      focusArea,
       userId,
       clientId: session.clientId,
       numberOfSessions: createDto.numberOfSessions,
