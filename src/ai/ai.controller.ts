@@ -15,18 +15,12 @@ import { AuthGuard } from '../auth/auth.guard';
 import { UsageTrackingService } from '../usage-tracking/usage-tracking.service';
 import { UsageType } from '../usage-tracking/schemas/usage-tracking.schema';
 import { FuturegraphService } from '../futuregraph/futuregraph.service';
-
-/**
- * SessionContext must match the required structure for FuturegraphSessionContext.
- */
-interface SessionContext {
-  sessionId: string;
-  clientId: string;
-  clientContext: Record<string, any>;
-  analysis: any;
-  report: any;
-  language: string;
-}
+import { 
+  FuturegraphSessionContext,
+  AuthenticatedRequest,
+  ErrorResponse 
+} from '../common/types';
+import { ValidationError } from '../common/errors/custom-errors';
 
 @Controller('ai')
 @UseGuards(AuthGuard)
@@ -39,7 +33,7 @@ export class AiController {
 
   @Post('chat')
   async chat(
-    @Request() req: any,
+    @Request() req: AuthenticatedRequest,
     @Body() body: { 
       message: string; 
       language?: string;
@@ -48,21 +42,21 @@ export class AiController {
     @Ip() ip: string,
     @Headers('user-agent') userAgent: string,
   ): Promise<{ response: string; usage?: any }> {
-    const userId: string | undefined = req.user?.uid || req.user?.dbUser?.firebaseUid;
-    if (!userId) throw new BadRequestException('Missing user authentication.');
+    const userId: string = req.user?.uid || req.user?.dbUser?.firebaseUid;
+    if (!userId) throw new ValidationError('Missing user authentication.');
 
-    let sessionContext: SessionContext | undefined = undefined;
+    let sessionContext: FuturegraphSessionContext | undefined = undefined;
 
     // 1. Validate sessionId and fetch context if provided
     if (body.sessionId) {
-      let sessionData: any;
+      let sessionData;
       try {
         sessionData = await this.futuregraphService.getAnalysisSession(
           body.sessionId,
           false // Don't include image
         );
       } catch (error) {
-        throw new BadRequestException('Invalid session ID');
+        throw new ValidationError('Invalid session ID');
       }
 
       if (

@@ -1,8 +1,4 @@
-// ============================================
-// FILE 3: src/webhooks/webhooks.controller.ts
-// ============================================
-// CREATE this new file
-
+// src/webhooks/webhooks.controller.ts
 import {
   Controller,
   Post,
@@ -13,17 +9,24 @@ import {
   BadRequestException,
   RawBodyRequest,
   Req,
+  Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { UsersService } from '../users/users.service';
 import { SubscriptionPlan } from '../users/schemas/user.schema';
-import * as crypto from 'crypto';
+import { StripeWebhookService } from './stripe-webhook.service';
+import { PayPalWebhookService } from './paypal-webhook.service';
+import { ValidationError } from '../common/errors/custom-errors';
 
 @Controller('webhooks')
 export class WebhooksController {
+  private readonly logger = new Logger(WebhooksController.name);
+
   constructor(
     private readonly usersService: UsersService,
     private readonly configService: ConfigService,
+    private readonly stripeWebhookService: StripeWebhookService,
+    private readonly paypalWebhookService: PayPalWebhookService,
   ) {}
 
   /**
@@ -36,25 +39,18 @@ export class WebhooksController {
     @Headers('stripe-signature') signature: string,
     @Req() request: RawBodyRequest<Request>,
   ) {
-    const webhookSecret = this.configService.get<string>('STRIPE_WEBHOOK_SECRET');
-    
-    if (!webhookSecret) {
-      console.error('STRIPE_WEBHOOK_SECRET not configured');
-      throw new BadRequestException('Webhook not configured');
+    if (!signature) {
+      throw new ValidationError('Missing stripe-signature header');
     }
 
-    // Verify webhook signature
-    const stripe = require('stripe')(this.configService.get<string>('STRIPE_SECRET_KEY'));
-    
     let event;
     try {
-      event = stripe.webhooks.constructEvent(
-        request.rawBody,
+      event = this.stripeWebhookService.constructEvent(
+        request.rawBody!,
         signature,
-        webhookSecret,
       );
     } catch (err) {
-      console.error('Stripe webhook signature verification failed:', err);
+      this.logger.error('Stripe webhook signature verification failed:', err);
       throw new BadRequestException('Invalid signature');
     }
 
@@ -71,10 +67,10 @@ export class WebhooksController {
           break;
           
         default:
-          console.log(`Unhandled Stripe event type: ${event.type}`);
+          this.logger.log(`Unhandled Stripe event type: ${event.type}`);
       }
     } catch (error) {
-      console.error('Error processing Stripe webhook:', error);
+      this.logger.error('Error processing Stripe webhook:', error);
       // Return 200 to acknowledge receipt even if processing failed
       // This prevents Stripe from retrying
     }
@@ -89,11 +85,12 @@ export class WebhooksController {
   @Post('paypal')
   @HttpCode(HttpStatus.OK)
   async handlePayPalWebhook(
-    @Headers() headers: any,
+    @Headers() headers: Record<string, string>,
     @Body() body: any,
+    @Req() request: RawBodyRequest<Request>,
   ) {
     // Verify PayPal webhook
-    const isValid = await this.verifyPayPalWebhook(headers, body);
+    const isValid = await this.paypalWebhookService.verifyWebhook(headers, body);
     if (!isValid) {
       throw new BadRequestException('Invalid PayPal webhook signature');
     }
@@ -111,10 +108,10 @@ export class WebhooksController {
           break;
           
         default:
-          console.log(`Unhandled PayPal event type: ${body.event_type}`);
+          this.logger.log(`Unhandled PayPal event type: ${body.event_type}`);
       }
     } catch (error) {
-      console.error('Error processing PayPal webhook:', error);
+      this.logger.error('Error processing PayPal webhook:', error);
     }
 
     return { received: true };
@@ -124,29 +121,20 @@ export class WebhooksController {
    * Handle Stripe subscription changes
    */
   private async handleStripeSubscriptionChange(subscription: any) {
-    // Extract user ID from Stripe metadata
-    const userId = subscription.metadata?.firebaseUid;
-    if (!userId) {
-      console.error('No firebaseUid in Stripe subscription metadata');
+    const metadata = this.stripeWebhookService.extractSubscriptionMetadata(subscription);
+    
+    if (!metadata.userId) {
+      this.logger.error('No firebaseUid in Stripe subscription metadata');
       return;
     }
 
-    // Map Stripe price ID to our subscription plan
-    const plan = this.mapStripePriceToSubscriptionPlan(
-      subscription.items.data[0].price.id,
-    );
+    const plan = this.stripeWebhookService.mapPriceToSubscriptionPlan(metadata.priceId);
 
     await this.usersService.updateSubscriptionFromPaymentWebhook(
-      userId,
-      plan,
+      metadata.userId,
+      plan as SubscriptionPlan,
       'stripe',
-      {
-        subscriptionId: subscription.id,
-        customerId: subscription.customer,
-        priceId: subscription.items.data[0].price.id,
-        status: subscription.status,
-        currentPeriodEnd: subscription.current_period_end,
-      },
+      metadata,
     );
   }
 
@@ -154,13 +142,14 @@ export class WebhooksController {
    * Handle Stripe subscription cancellation
    */
   private async handleStripeSubscriptionCancellation(subscription: any) {
-    const userId = subscription.metadata?.firebaseUid;
-    if (!userId) {
+    const metadata = this.stripeWebhookService.extractSubscriptionMetadata(subscription);
+    
+    if (!metadata.userId) {
       return;
     }
 
     await this.usersService.updateSubscriptionFromPaymentWebhook(
-      userId,
+      metadata.userId,
       SubscriptionPlan.FREE,
       'stripe',
       {
@@ -178,7 +167,7 @@ export class WebhooksController {
     // Extract user ID from PayPal custom_id
     const userId = subscription.custom_id;
     if (!userId) {
-      console.error('No custom_id in PayPal subscription');
+      this.logger.error('No custom_id in PayPal subscription');
       return;
     }
 
@@ -219,51 +208,13 @@ export class WebhooksController {
   }
 
   /**
-   * Map Stripe price IDs to subscription plans
-   */
-  private mapStripePriceToSubscriptionPlan(priceId: string): SubscriptionPlan {
-    // Use string literals to avoid computed property issues
-    const basicPriceId = this.configService.get<string>('STRIPE_PRICE_BASIC');
-    const proPriceId = this.configService.get<string>('STRIPE_PRICE_PRO');
-
-    if (priceId === basicPriceId) return SubscriptionPlan.BASIC;
-    if (priceId === proPriceId) return SubscriptionPlan.PRO;
-    return SubscriptionPlan.FREE;
-  }
-
-  /**
    * Map PayPal plan IDs to subscription plans
    */
   private mapPayPalPlanToSubscriptionPlan(planId: string): SubscriptionPlan {
-    // Use string literals to avoid computed property issues
-    const basicPlanId = this.configService.get<string>('PAYPAL_PLAN_BASIC');
-    const proPlanId = this.configService.get<string>('PAYPAL_PLAN_PRO');
-
-    if (planId === basicPlanId) return SubscriptionPlan.BASIC;
-    if (planId === proPlanId) return SubscriptionPlan.PRO;
-    return SubscriptionPlan.FREE;
-  }
-
-  /**
-   * Verify PayPal webhook signature
-   */
-  private async verifyPayPalWebhook(headers: any, body: any): Promise<boolean> {
-    const webhookId = this.configService.get<string>('PAYPAL_WEBHOOK_ID');
-    const cert = headers['paypal-cert-url'];
-    const signature = headers['paypal-transmission-sig'];
-    const transmissionId = headers['paypal-transmission-id'];
-    const timestamp = headers['paypal-transmission-time'];
-    const algo = headers['paypal-auth-algo'];
-
-    // In production, implement proper PayPal webhook verification
-    // This is a simplified example
-    if (!webhookId || !cert || !signature) {
-      return false;
-    }
-
-    // TODO: Implement actual PayPal webhook verification
-    // See: https://developer.paypal.com/docs/api/webhooks/v1/#verify-webhook-signature
+    const plans = this.configService.get('paypal.plans');
     
-    return true; // Placeholder - implement proper verification
+    if (planId === plans?.basic) return SubscriptionPlan.BASIC;
+    if (planId === plans?.pro) return SubscriptionPlan.PRO;
+    return SubscriptionPlan.FREE;
   }
 }

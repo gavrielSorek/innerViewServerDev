@@ -3,6 +3,11 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import OpenAI from 'openai';
 import { LanguageService, SupportedLanguage } from '../common/language.service';
+import { 
+  FuturegraphAnalysis,
+  ClientContext
+} from '../common/types';
+import { ExternalServiceError } from '../common/errors/custom-errors';
 
 @Injectable()
 export class AiService {
@@ -13,7 +18,7 @@ export class AiService {
     private readonly languageService: LanguageService,
   ) {
     this.openai = new OpenAI({
-      apiKey: this.configService.get<string>('OPENAI_API_KEY'),
+      apiKey: this.configService.get<string>('openai.apiKey'),
     });
   }
 
@@ -23,16 +28,16 @@ export class AiService {
    */
   async analyzeComplete(
     handwritingImage: string,
-    clientContext: any,
-    additionalContext: any,
+    clientContext: ClientContext,
+    additionalContext: Record<string, any>,
     language: SupportedLanguage,
-  ): Promise<any> {
+  ): Promise<FuturegraphAnalysis> {
     const systemPrompt = this.createCompleteSystemPrompt(language);
     const userPrompt = this.createCompleteUserPrompt(clientContext, additionalContext, language);
 
     try {
       const completion = await this.openai.chat.completions.create({
-        model: 'gpt-4.1-nano',
+        model: this.configService.get<string>('openai.model'),
         messages: [
           { role: 'system', content: systemPrompt },
           {
@@ -48,8 +53,8 @@ export class AiService {
             ],
           },
         ],
-        temperature: 0.7,
-        max_tokens: 4000,
+        temperature: this.configService.get<number>('openai.temperature'),
+        max_tokens: this.configService.get<number>('openai.maxTokens'),
       });
 
       let content = (completion.choices[0].message.content as string)?.trim() ?? '';
@@ -62,21 +67,19 @@ export class AiService {
         content = content.slice(0, -3).trim();
       }
 
-      let analysis: any;
+      let analysis: FuturegraphAnalysis;
       try {
         analysis = JSON.parse(content);
       } catch {
         // Fallback structure when parsing fails
-        analysis = {
-          rawAnalysis: content,
-          error: 'Failed to parse structured response',
-        };
+        throw new ExternalServiceError('OpenAI', 'Failed to parse analysis response');
       }
 
       return analysis;
     } catch (error) {
       console.error('Error calling OpenAI:', error);
-      throw error;
+      if (error instanceof ExternalServiceError) throw error;
+      throw new ExternalServiceError('OpenAI', error);
     }
   }
 
@@ -206,8 +209,8 @@ Return the analysis in JSON format with the following structure:`;
    * Create user prompt for complete analysis
    */
   private createCompleteUserPrompt(
-    clientContext: any,
-    additionalContext: any,
+    clientContext: ClientContext,
+    additionalContext: Record<string, any>,
     language: SupportedLanguage,
   ): string {
     const analyzeText = language === 'he'
@@ -229,10 +232,10 @@ Return the analysis in JSON format with the following structure:`;
 
 
   async getFocusedAnalysis(
-    analysisJson: any,
+    analysisJson: FuturegraphAnalysis,
     focus: string,
     language: string,
-  ): Promise<any> {
+  ): Promise<FuturegraphAnalysis> {
     const prompt = `
       You are an expert analyst. Based on the provided analysis JSON, generate a new version of the report with a specific focus on "${focus}".
       The entire output must be in the "${language}" language.
@@ -245,19 +248,20 @@ Return the analysis in JSON format with the following structure:`;
 
     try {
       const completion = await this.openai.chat.completions.create({
-        model: 'gpt-4.1-nano', // Or your preferred model
+        model: this.configService.get<string>('openai.model'),
         messages: [{ role: 'system', content: prompt }],
         response_format: { type: "json_object" },
       });
 
       const result = completion.choices[0].message.content;
       if (!result) {
-        return null;
+        throw new ExternalServiceError('OpenAI', 'No response from focused analysis');
       }
-      return JSON.parse(result);
+      return JSON.parse(result) as FuturegraphAnalysis;
     } catch (error) {
       console.error('Error fetching focused analysis from OpenAI:', error);
-      throw new Error('Failed to get focused analysis from AI model.');
+      if (error instanceof ExternalServiceError) throw error;
+      throw new ExternalServiceError('OpenAI', 'Failed to get focused analysis');
     }
   }
 }

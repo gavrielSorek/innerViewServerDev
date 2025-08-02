@@ -69,18 +69,19 @@ async function bootstrap() {
     // Enable CORS with configuration
     const corsOrigins = configService.get<string[]>('security.corsOrigins');
     app.enableCors({
-      origin: corsOrigins,
+      origin: true, // <-- This allows all origins and echoes the origin back, which works with credentials in dev!
+      //origin: corsOrigins,
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
       allowedHeaders: ['Content-Type', 'Authorization'],
     });
 
     // Global prefix and versioning
-    app.setGlobalPrefix('api');
-    app.enableVersioning({
-      type: VersioningType.URI,
-      defaultVersion: '1',
-    });
+    // app.setGlobalPrefix('api');
+    // app.enableVersioning({
+    //   type: VersioningType.URI,
+    //   defaultVersion: '1',
+    // });
 
     // Global pipes
     app.useGlobalPipes(

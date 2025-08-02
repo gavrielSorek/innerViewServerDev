@@ -10,15 +10,13 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import OpenAI from 'openai';
 import { LanguageService, SupportedLanguage } from '../common/language.service';
-
-interface FuturegraphSessionContext {
-  sessionId: string;
-  clientId: string;
-  clientContext: any;
-  analysis: any;
-  report: any;
-  language: string;
-}
+import { 
+  FuturegraphSessionContext,
+  ClientContext,
+  FuturegraphAnalysis,
+  FuturegraphReport 
+} from '../common/types';
+import { BaseError, ExternalServiceError } from '../common/errors/custom-errors';
 
 @Injectable()
 export class AiChatService {
@@ -28,7 +26,7 @@ export class AiChatService {
     private readonly languageService: LanguageService,
   ) {
     this.openai = new OpenAI({
-      apiKey: this.configService.get<string>('OPENAI_API_KEY'),
+      apiKey: this.configService.get<string>('openai.apiKey'),
     });
   }
 
@@ -61,7 +59,7 @@ export class AiChatService {
 
     try {
       const completion = await this.openai.chat.completions.create({
-        model: 'gpt-4.1-nano',
+        model: this.configService.get<string>('openai.model'),
         messages: [
           {
             role: 'system',
@@ -72,8 +70,8 @@ export class AiChatService {
             content: userContent,
           },
         ],
-        temperature: 0.7,
-        max_tokens: 500,
+        temperature: this.configService.get<number>('openai.temperature'),
+        max_tokens: this.configService.get<number>('openai.maxTokens', 500),
       });
       const responseContent = completion.choices[0]?.message?.content;
       if (!responseContent) {
@@ -83,25 +81,27 @@ export class AiChatService {
           : 'I apologize, but I could not generate a response. Please try again.';
       }
       return responseContent.trim();
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error in AI chat:', error);
+      
+      if (error instanceof BaseError) {
+        throw error;
+      }
+      
       // Extract error message if available
       const messageText: string =
         error instanceof Error ? error.message : String(error);
+      
       if (messageText.includes('rate limit')) {
-        return lang === 'he'
-          ? 'אני מתנצל, השירות כרגע חווה עומס גבוה. נסה שוב בעוד רגע.'
-          : 'I apologize, but the service is currently experiencing high demand. Please try again in a moment.';
+        throw new ExternalServiceError('OpenAI', 'Rate limit exceeded');
       }
+      
       if (messageText.includes('API key')) {
         console.error('OpenAI API key issue detected');
-        return lang === 'he'
-          ? 'אני מתנצל, נראה שיש בעיית תצורה. אנא פנה לתמיכה.'
-          : 'I apologize, but there seems to be a configuration issue. Please contact support.';
+        throw new ExternalServiceError('OpenAI', 'Configuration error');
       }
-      return lang === 'he'
-        ? 'אני מתנצל, אירעה תקלה בעת עיבוד הבקשה. אנא נסה שוב.'
-        : 'I apologize, but I encountered an issue while processing your request. Please try again.';
+      
+      throw new ExternalServiceError('OpenAI', error);
     }
   }
 
@@ -179,7 +179,7 @@ My question: ${message}`;
     sessionContext: FuturegraphSessionContext,
     lang: SupportedLanguage,
   ): string {
-    const ctx = sessionContext.clientContext || {};
+    const ctx: ClientContext = sessionContext.clientContext || {} as ClientContext;
     const label = lang === 'he' ? 'פרטי המטופל' : 'Client Information';
     const name = lang === 'he' ? 'שם' : 'Name';
     const age = lang === 'he' ? 'גיל' : 'Age';
@@ -198,8 +198,8 @@ My question: ${message}`;
     sessionContext: FuturegraphSessionContext,
     lang: SupportedLanguage,
   ): string {
-    const analysis = sessionContext.analysis;
-    const report = sessionContext.report;
+    const analysis: FuturegraphAnalysis = sessionContext.analysis;
+    const report: FuturegraphReport = sessionContext.report;
     
     // Create a comprehensive but structured summary of the analysis
     const sections: string[] = [];
@@ -224,7 +224,7 @@ ${report.executiveSummary}`);
       const layers = analysis.personalityLayers;
       const layerSummary: string[] = [];
       
-      ['visible', 'conscious', 'subconscious', 'hidden'].forEach(layer => {
+      (['visible', 'conscious', 'subconscious', 'hidden'] as const).forEach(layer => {
         if (layers[layer]?.insights?.length > 0) {
           layerSummary.push(`${layer}: ${layers[layer].insights.join(', ')}`);
         }

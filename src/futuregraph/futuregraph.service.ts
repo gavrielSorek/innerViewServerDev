@@ -21,6 +21,20 @@ import {
 import { AiService } from './ai.service';
 import { StartSessionDto } from './dto/start-session.dto';
 import { LanguageService, SupportedLanguage } from '../common/language.service';
+import { 
+  FuturegraphAnalysis, 
+  FuturegraphReport,
+  CoreIdentity,
+  PersonalityLayers,
+  DefenseMechanisms,
+  InternalContracts,
+  Capabilities,
+  LimitingBeliefs,
+  EmotionalPatterns,
+  TherapeuticContract,
+  ClientContext
+} from '../common/types';
+import { ResourceNotFoundError, ExternalServiceError } from '../common/errors/custom-errors';
 
 @Injectable()
 export class FuturegraphService {
@@ -42,8 +56,8 @@ export class FuturegraphService {
    */
   async startAndCompleteAnalysis(dto: StartSessionDto): Promise<{
     sessionId: string;
-    analysis: any;
-    report: any;
+    analysis: FuturegraphAnalysis;
+    report: FuturegraphReport;
   }> {
     const sessionId = `fg_${Date.now()}_${Math.random()
       .toString(36)
@@ -55,7 +69,7 @@ export class FuturegraphService {
     // Persist the session without the handwriting image
     const session = new this.sessionModel({
       sessionId,
-      name: sessionName, // ADD THIS LINE
+      name: sessionName,
       userId: dto.userId,
       clientId: dto.clientId,
       clientContext: dto.clientContext,
@@ -73,7 +87,7 @@ export class FuturegraphService {
       await imageDoc.save();
 
       // Perform complete analysis in a single round
-      const analysis = await this.aiService.analyzeComplete(
+      const analysis: FuturegraphAnalysis = await this.aiService.analyzeComplete(
         dto.handwritingImage,
         session.clientContext,
         {},
@@ -86,7 +100,7 @@ export class FuturegraphService {
       session.status = 'completed';
 
       // Generate report immediately
-      const report = this.generateReport(analysis, session, language);
+      const report: FuturegraphReport = this.generateReport(analysis, session, language);
       session.report = report;
 
       await session.save();
@@ -98,8 +112,11 @@ export class FuturegraphService {
       };
     } catch (error) {
       session.status = 'failed';
-      session.error = error.message;
+      session.error = error instanceof Error ? error.message : String(error);
       await session.save();
+      if (error instanceof Error) {
+        throw new ExternalServiceError('FutureGraph Analysis', error);
+      }
       throw error;
     }
   }
@@ -115,13 +132,13 @@ export class FuturegraphService {
     includeImage = false,
   ): Promise<{
     session: FuturegraphSessionDocument;
-    analysis: any;
-    report: any;
+    analysis: FuturegraphAnalysis;
+    report: FuturegraphReport;
     handwritingImage?: string;
   }> {
     const session = await this.sessionModel.findOne({ sessionId }).exec();
     if (!session) {
-      throw new NotFoundException('Session not found');
+      throw new ResourceNotFoundError('Session', sessionId);
     }
 
     let handwritingImage: string | undefined;
@@ -132,8 +149,8 @@ export class FuturegraphService {
 
     return {
       session,
-      analysis: session.completeAnalysis,
-      report: session.report,
+      analysis: session.completeAnalysis as FuturegraphAnalysis,
+      report: session.report as FuturegraphReport,
       handwritingImage,
     };
   }
@@ -178,8 +195,8 @@ export class FuturegraphService {
     userId: string,
   ): Promise<{
     focusReportId: string;
-    analysis: any;
-    report: any;
+    analysis: FuturegraphAnalysis;
+    report: FuturegraphReport;
   }> {
     // Check if we already have this focus report
     const existingReport = await this.focusReportModel.findOne({
@@ -191,20 +208,20 @@ export class FuturegraphService {
     if (existingReport) {
       return {
         focusReportId: existingReport.focusReportId,
-        analysis: existingReport.focusedAnalysis,
-        report: existingReport.focusedReport,
+        analysis: existingReport.focusedAnalysis as FuturegraphAnalysis,
+        report: existingReport.focusedReport as FuturegraphReport,
       };
     }
 
     // Get the original session
     const session = await this.sessionModel.findOne({ sessionId }).exec();
     if (!session || !session.completeAnalysis) {
-      throw new NotFoundException(`Session with ID "${sessionId}" not found or has no analysis.`);
+      throw new ResourceNotFoundError('Session', sessionId);
     }
 
     // Verify user owns this session
     if (session.userId !== userId) {
-      throw new NotFoundException(`Session with ID "${sessionId}" not found.`);
+      throw new ResourceNotFoundError('Session', sessionId);
     }
 
     // Generate focus report ID
@@ -217,14 +234,14 @@ export class FuturegraphService {
 
     try {
       // Generate focused analysis using AI
-      const focusedAnalysis = await this.aiService.getFocusedAnalysis(
+      const focusedAnalysis: FuturegraphAnalysis = await this.aiService.getFocusedAnalysis(
         session.completeAnalysis,
         focus,
         language,
       );
 
       // Generate focused report
-      const focusedReport = this.generateReport(
+      const focusedReport: FuturegraphReport = this.generateReport(
         focusedAnalysis,
         session,
         language as SupportedLanguage,
@@ -263,7 +280,7 @@ export class FuturegraphService {
         focusedAnalysis: {},
         focusedReport: {},
         status: 'failed',
-        error: error.message,
+        error: error instanceof Error ? error.message : String(error),
       });
 
       await focusReport.save();
@@ -353,8 +370,8 @@ export class FuturegraphService {
     focus: string;
     language: string;
     status: string;
-    analysis: any;
-    report: any;
+    analysis: FuturegraphAnalysis;
+    report: FuturegraphReport;
     createdAt: Date;
   }> {
     const focusReport = await this.focusReportModel.findOne({
@@ -363,7 +380,7 @@ export class FuturegraphService {
     }).exec();
 
     if (!focusReport) {
-      throw new NotFoundException('Focus report not found');
+      throw new ResourceNotFoundError('Focus report', focusReportId);
     }
 
     const doc = focusReport as FuturegraphFocusReportDocument;
@@ -375,8 +392,8 @@ export class FuturegraphService {
       focus: doc.focus,
       language: doc.language,
       status: doc.status,
-      analysis: doc.focusedAnalysis,
-      report: doc.focusedReport,
+      analysis: doc.focusedAnalysis as FuturegraphAnalysis,
+      report: doc.focusedReport as FuturegraphReport,
       createdAt: doc.createdAt,
     };
   }
@@ -385,20 +402,20 @@ export class FuturegraphService {
    * Generate a comprehensive report from the complete analysis
    */
   private generateReport(
-    analysis: any,
+    analysis: FuturegraphAnalysis,
     session: FuturegraphSessionDocument,
     language: SupportedLanguage,
-  ): any {
+  ): FuturegraphReport {
     return {
       sessionId: session.sessionId,
       clientId: session.clientId,
       generatedAt: new Date(),
       language,
       executiveSummary: this.generateExecutiveSummary(analysis, language),
-      coreIdentity: analysis.coreIdentity || {},
-      personalityLayers: analysis.personalityLayers || {},
-      emotionalPatterns: analysis.emotionalPatterns || {},
-      defenceMechanisms: analysis.defenceMechanisms || {},
+      coreIdentity: analysis.coreIdentity || {} as CoreIdentity,
+      personalityLayers: analysis.personalityLayers || {} as PersonalityLayers,
+      emotionalPatterns: analysis.emotionalPatterns || {} as EmotionalPatterns,
+      defenceMechanisms: analysis.defenceMechanisms || {} as DefenseMechanisms,
       
       // Internal Contracts - חוזים פנימיים
       internalContracts: this.formatInternalContracts(analysis.internalContracts, language),
@@ -406,7 +423,7 @@ export class FuturegraphService {
       // Intellectual-Emotional-Social Capabilities - יכולות שכליות-רגשיות-חברתיות
       capabilities: this.formatCapabilities(analysis.intellectualEmotionalSocialCapabilities, language),
       
-      limitingBeliefs: analysis.limitingBeliefs || {},
+      limitingBeliefs: analysis.limitingBeliefs || {} as LimitingBeliefs,
       therapeuticInsights: analysis.therapeuticInsights || [],
       treatmentRecommendations: analysis.treatmentRecommendations || [],
       therapeuticContract: this.generateTherapeuticContract(
@@ -419,7 +436,11 @@ export class FuturegraphService {
   /**
    * Format internal contracts for the report
    */
-  private formatInternalContracts(contracts: any, language: SupportedLanguage): any {
+  private formatInternalContracts(contracts: InternalContracts | undefined, language: SupportedLanguage): {
+    title: string;
+    contracts: InternalContracts['contracts'];
+    overallImpact: string;
+  } {
     if (!contracts) {
       return {
         title: language === 'he' ? 'חוזים פנימיים' : 'Internal Contracts',
@@ -440,7 +461,13 @@ export class FuturegraphService {
   /**
    * Format intellectual-emotional-social capabilities for the report
    */
-  private formatCapabilities(capabilities: any, language: SupportedLanguage): any {
+  private formatCapabilities(capabilities: Capabilities | undefined, language: SupportedLanguage): {
+    title: string;
+    intellectual: Capabilities['intellectual'];
+    emotional: Capabilities['emotional'];
+    social: Capabilities['social'];
+    summary: string;
+  } {
     if (!capabilities) {
       return {
         title: language === 'he' 
@@ -470,7 +497,7 @@ export class FuturegraphService {
    * Generate executive summary in the requested language
    */
   private generateExecutiveSummary(
-    analysis: any,
+    analysis: FuturegraphAnalysis,
     language: SupportedLanguage,
   ): string {
     const intro =
@@ -506,14 +533,9 @@ export class FuturegraphService {
    * Generate therapeutic contract structure
    */
   private generateTherapeuticContract(
-    analysis: any,
+    analysis: FuturegraphAnalysis,
     language: SupportedLanguage,
-  ): {
-    goals: string[];
-    approach: string;
-    timeline: string;
-    focusAreas: string[];
-  } {
+  ): TherapeuticContract {
     // Include focus on internal contracts if identified
     const contractFocus = analysis.internalContracts?.contracts?.length > 0
       ? language === 'he'
@@ -563,13 +585,13 @@ export class FuturegraphService {
     sessionId: string,
     focus: string,
     language: string,
-  ): Promise<any> {
+  ): Promise<FuturegraphAnalysis> {
     // This method is deprecated in favor of createFocusedAnalysis
     // but kept for backward compatibility
     const session = await this.sessionModel.findOne({ sessionId }).exec();
 
     if (!session || !session.completeAnalysis) {
-      throw new NotFoundException(`Session with ID "${sessionId}" not found or has no analysis.`);
+      throw new ResourceNotFoundError('Session', sessionId);
     }
 
     // Use the completeAnalysis field as the full analysis JSON
@@ -628,7 +650,7 @@ export class FuturegraphService {
       return {
         sessionDeleted: false,
         imageDeleted: false,
-        error: error.message,
+        error: error instanceof Error ? error.message : String(error),
       };
     }
   }
@@ -666,7 +688,7 @@ export class FuturegraphService {
       console.error('Error deleting focus report:', error);
       return {
         deleted: false,
-        error: error.message,
+        error: error instanceof Error ? error.message : String(error),
       };
     }
   }
@@ -731,7 +753,7 @@ export class FuturegraphService {
       };
     } catch (error) {
       console.error('Error deleting client sessions:', error);
-      errors.push(error.message);
+      errors.push(error instanceof Error ? error.message : String(error));
       return {
         sessionsDeleted: 0,
         imagesDeleted: 0,
@@ -797,7 +819,7 @@ export class FuturegraphService {
       };
     } catch (error) {
       console.error('Error deleting all user sessions:', error);
-      errors.push(error.message);
+      errors.push(error instanceof Error ? error.message : String(error));
       return {
         sessionsDeleted: 0,
         imagesDeleted: 0,
@@ -923,7 +945,7 @@ export class FuturegraphService {
       console.error('Error updating session name:', error);
       return {
         success: false,
-        error: error.message,
+        error: error instanceof Error ? error.message : String(error),
       };
     }
   }
@@ -957,7 +979,7 @@ export class FuturegraphService {
       console.error('Error updating focus report name:', error);
       return {
         success: false,
-        error: error.message,
+        error: error instanceof Error ? error.message : String(error),
       };
     }
   }

@@ -4,17 +4,23 @@ import { ConfigService } from '@nestjs/config';
 import OpenAI from 'openai';
 import { LanguageService, SupportedLanguage } from '../common/language.service';
 import { SessionDetail } from './schemas/treatment-plan.schema';
+import { 
+  FuturegraphAnalysis, 
+  FuturegraphReport,
+  ClientContext 
+} from '../common/types';
+import { BaseError } from '../common/errors/custom-errors';
 
 interface GeneratePlanInput {
-  analysis: any;
-  report: any;
-  clientContext: any;
+  analysis: FuturegraphAnalysis;
+  report: FuturegraphReport;
+  clientContext: ClientContext;
   numberOfSessions: number;
   sessionDuration: number;
   overallGoal?: string;
   preferredMethods: string[];
   language: SupportedLanguage;
-  focusArea?: string; // Added focus area
+  focusArea?: string;
 }
 
 interface GeneratedPlan {
@@ -39,7 +45,7 @@ export class TreatmentPlanAiService {
     private readonly languageService: LanguageService,
   ) {
     this.openai = new OpenAI({
-      apiKey: this.configService.get<string>('OPENAI_API_KEY'),
+      apiKey: this.configService.get<string>('openai.apiKey'),
     });
   }
 
@@ -52,26 +58,27 @@ export class TreatmentPlanAiService {
 
     try {
       const completion = await this.openai.chat.completions.create({
-        model: 'gpt-4.1-nano',
+        model: this.configService.get<string>('openai.model'),
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
         ],
-        temperature: 0.7,
-        max_tokens: 4000,
+        temperature: this.configService.get<number>('openai.temperature'),
+        max_tokens: this.configService.get<number>('openai.maxTokens'),
         response_format: { type: "json_object" },
       });
 
       const content = completion.choices[0]?.message?.content;
       if (!content) {
-        throw new Error('No response from AI');
+        throw new BaseError(500, 'No response from AI service');
       }
 
       const plan = JSON.parse(content) as GeneratedPlan;
       return this.validateAndEnrichPlan(plan, input);
     } catch (error) {
       console.error('Error generating treatment plan:', error);
-      throw error;
+      if (error instanceof BaseError) throw error;
+      throw new BaseError(500, 'Failed to generate treatment plan', error);
     }
   }
 
@@ -209,7 +216,7 @@ ${language === 'he' ? 'All content must be in Hebrew.' : 'All content must be in
   /**
    * Validate and enrich the generated plan
    */
-  private validateAndEnrichPlan(plan: any, input: GeneratePlanInput): GeneratedPlan {
+  private validateAndEnrichPlan(plan: GeneratedPlan, input: GeneratePlanInput): GeneratedPlan {
     // Ensure all required fields are present
     const validatedPlan: GeneratedPlan = {
       overallGoal: plan.overallGoal || this.getDefaultGoal(input.language),
@@ -245,7 +252,10 @@ ${language === 'he' ? 'All content must be in Hebrew.' : 'All content must be in
   /**
    * Validate time allocation for a session
    */
-  private validateTimeAllocation(allocation: any, totalDuration: number): SessionDetail['timeAllocation'] {
+  private validateTimeAllocation(
+    allocation: SessionDetail['timeAllocation'] | undefined, 
+    totalDuration: number
+  ): SessionDetail['timeAllocation'] {
     const defaultAllocation = this.getDefaultTimeAllocation(totalDuration);
     
     if (!allocation) {

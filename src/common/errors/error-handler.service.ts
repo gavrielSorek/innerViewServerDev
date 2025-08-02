@@ -10,6 +10,28 @@ import {
   ExternalServiceError 
 } from './custom-errors';
 
+interface MongoError extends Error {
+  code?: number;
+  keyPattern?: Record<string, any>;
+  keyValue?: Record<string, any>;
+  errors?: Record<string, { message: string }>;
+}
+
+interface CastError extends Error {
+  name: 'CastError';
+  path: string;
+  value: any;
+}
+
+interface AxiosError {
+  response?: {
+    status: number;
+    data: any;
+  };
+  request?: any;
+  message: string;
+}
+
 @Injectable()
 export class ErrorHandlerService {
   private readonly logger = new Logger(ErrorHandlerService.name);
@@ -17,30 +39,33 @@ export class ErrorHandlerService {
   /**
    * Handle database errors
    */
-  handleDatabaseError(error: any, operation: string, entity: string): never {
+  handleDatabaseError(error: unknown, operation: string, entity: string): never {
     this.logger.error(`Database error during ${operation} ${entity}:`, error);
 
-    if (error.code === 11000) {
-      const field = Object.keys(error.keyPattern || {})[0];
+    const mongoError = error as MongoError;
+
+    if (mongoError.code === 11000) {
+      const field = Object.keys(mongoError.keyPattern || {})[0];
       throw new ConflictError(
         `${entity} with this ${field} already exists`,
-        error.keyValue,
+        mongoError.keyValue,
       );
     }
 
-    if (error.name === 'ValidationError') {
-      const messages = Object.values(error.errors || {})
-        .map((err: any) => err.message)
+    if (mongoError.name === 'ValidationError') {
+      const messages = Object.values(mongoError.errors || {})
+        .map((err) => err.message)
         .join(', ');
       throw new ValidationError(
         `Validation failed: ${messages}`,
-        error.errors,
+        mongoError.errors,
       );
     }
 
-    if (error.name === 'CastError') {
+    const castError = error as CastError;
+    if (castError.name === 'CastError') {
       throw new ValidationError(
-        `Invalid ${error.path}: ${error.value}`,
+        `Invalid ${castError.path}: ${castError.value}`,
       );
     }
 
@@ -53,13 +78,15 @@ export class ErrorHandlerService {
   /**
    * Handle external API errors
    */
-  handleExternalApiError(error: any, service: string): never {
+  handleExternalApiError(error: unknown, service: string): never {
     this.logger.error(`External API error from ${service}:`, error);
 
-    if (error.response) {
+    const axiosError = error as AxiosError;
+
+    if (axiosError.response) {
       // API responded with error
-      const status = error.response.status;
-      const data = error.response.data;
+      const status = axiosError.response.status;
+      const data = axiosError.response.data;
 
       if (status === 429) {
         throw new RateLimitError(
@@ -72,7 +99,7 @@ export class ErrorHandlerService {
       throw new ExternalServiceError(service, data);
     }
 
-    if (error.request) {
+    if (axiosError.request) {
       // Request was made but no response
       throw new ExternalServiceError(
         service,
@@ -81,13 +108,13 @@ export class ErrorHandlerService {
     }
 
     // Something else happened
-    throw new ExternalServiceError(service, error.message);
+    throw new ExternalServiceError(service, axiosError.message || error);
   }
 
   /**
    * Log and rethrow errors
    */
-  logAndThrow(error: any, context: string): never {
+  logAndThrow(error: unknown, context: string): never {
     if (error instanceof BaseError) {
       this.logger.error(`${context}: ${error.message}`, error.stack);
       throw error;

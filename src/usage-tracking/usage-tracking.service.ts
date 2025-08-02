@@ -3,6 +3,7 @@ import {
   Injectable,
   ForbiddenException,
   BadRequestException,
+  Logger,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
@@ -18,9 +19,19 @@ import {
   USAGE_LIMIT_MESSAGES,
   SubscriptionLimits,
 } from '../config/subscription-limits.config';
+import { 
+  UsageStatsResponse, 
+  UsageLimitCheckResponse,
+  UsageDetail,
+  UsageHistory,
+  UsageBreakdownResponse
+} from './dto';
+import { RateLimitError, ValidationError } from '../common/errors/custom-errors';
 
 @Injectable()
 export class UsageTrackingService {
+  private readonly logger = new Logger(UsageTrackingService.name);
+
   constructor(
     @InjectModel(UsageTracking.name)
     private usageTrackingModel: Model<UsageTrackingDocument>,
@@ -33,7 +44,7 @@ export class UsageTrackingService {
   async trackUsage(
     userId: string,
     usageType: UsageType,
-    metadata?: any,
+    metadata?: Record<string, any>,
     ipAddress?: string,
     userAgent?: string,
   ): Promise<UsageTracking> {
@@ -55,15 +66,7 @@ export class UsageTrackingService {
   async checkUsageLimit(
     userId: string,
     usageType: UsageType,
-  ): Promise<{
-    allowed: boolean;
-    used: number;
-    limit: number;
-    remaining: number;
-    resetDate: Date;
-    message?: string;
-    upgradePrompt?: string;
-  }> {
+  ): Promise<UsageLimitCheckResponse> {
     const user = await this.usersService.findOne(userId);
     const limits = SUBSCRIPTION_LIMITS[user.subscription];
     const limit = this.getLimit(limits, usageType);
@@ -141,31 +144,26 @@ export class UsageTrackingService {
   async enforceUsageLimit(
     userId: string,
     usageType: UsageType,
-    metadata?: any,
+    metadata?: Record<string, any>,
     ipAddress?: string,
     userAgent?: string,
   ): Promise<void> {
     const limitCheck = await this.checkUsageLimit(userId, usageType);
 
     if (!limitCheck.allowed) {
-      throw new ForbiddenException({
-        error: 'USAGE_LIMIT_EXCEEDED',
-        message: limitCheck.message,
-        upgradePrompt: limitCheck.upgradePrompt,
-        usage: {
-          used: limitCheck.used,
-          limit: limitCheck.limit,
-          resetDate: limitCheck.resetDate,
-        },
-      });
+      throw new RateLimitError(
+        limitCheck.limit,
+        limitCheck.resetDate,
+        limitCheck.message,
+      );
     }
 
     // Track the usage
     await this.trackUsage(userId, usageType, metadata, ipAddress, userAgent);
 
-    // Return warning if approaching limit
+    // Log warning if approaching limit
     if (limitCheck.message && limitCheck.remaining <= 3) {
-      console.warn(`User ${userId} approaching ${usageType} limit: ${limitCheck.message}`);
+      this.logger.warn(`User ${userId} approaching ${usageType} limit: ${limitCheck.message}`);
     }
   }
 
@@ -176,30 +174,7 @@ export class UsageTrackingService {
     userId: string,
     startDate?: Date,
     endDate?: Date,
-  ): Promise<{
-    subscription: SubscriptionPlan;
-    limits: SubscriptionLimits;
-    usage: {
-      futuregraphAnalyze: {
-        used: number;
-        limit: number;
-        remaining: number;
-        percentage: number;
-        resetDate: Date;
-      };
-      aiChat: {
-        used: number;
-        limit: number;
-        remaining: number;
-        percentage: number;
-        resetDate: Date;
-      };
-    };
-    history?: {
-      daily: Record<string, { futuregraphAnalyze: number; aiChat: number }>;
-      total: { futuregraphAnalyze: number; aiChat: number };
-    };
-  }> {
+  ): Promise<UsageStatsResponse> {
     const user = await this.usersService.findOne(userId);
     const limits = SUBSCRIPTION_LIMITS[user.subscription];
 
@@ -209,7 +184,7 @@ export class UsageTrackingService {
       this.checkUsageLimit(userId, UsageType.AI_CHAT),
     ]);
 
-    const result: any = {
+    const result: UsageStatsResponse = {
       subscription: user.subscription,
       limits,
       usage: {
@@ -246,10 +221,7 @@ export class UsageTrackingService {
     userId: string,
     startDate: Date,
     endDate: Date,
-  ): Promise<{
-    daily: Record<string, { futuregraphAnalyze: number; aiChat: number }>;
-    total: { futuregraphAnalyze: number; aiChat: number };
-  }> {
+  ): Promise<UsageHistory> {
     const usageData = await this.usageTrackingModel
       .find({
         userId,
@@ -297,7 +269,7 @@ export class UsageTrackingService {
     userId: string,
     period: 'hour' | 'day' | 'week' | 'month' = 'day',
     limit: number = 30,
-  ): Promise<any[]> {
+  ): Promise<UsageBreakdownResponse['breakdown']> {
     const now = new Date();
     const startDate = new Date();
 
@@ -355,7 +327,7 @@ export class UsageTrackingService {
       case UsageType.AI_CHAT:
         return limits.aiChat;
       default:
-        throw new BadRequestException('Invalid usage type');
+        throw new ValidationError('Invalid usage type');
     }
   }
 }

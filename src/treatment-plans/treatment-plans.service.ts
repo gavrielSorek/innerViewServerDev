@@ -18,6 +18,16 @@ import { TreatmentPlanResponse } from './dto/treatment-plan-response.dto';
 import { FuturegraphService } from '../futuregraph/futuregraph.service';
 import { TreatmentPlanAiService } from './treatment-plan-ai.service';
 import { LanguageService, SupportedLanguage } from '../common/language.service';
+import { 
+  FuturegraphAnalysis, 
+  FuturegraphReport,
+  ClientContext 
+} from '../common/types';
+import { 
+  ResourceNotFoundError, 
+  ValidationError, 
+  AuthorizationError 
+} from '../common/errors/custom-errors';
 
 @Injectable()
 export class TreatmentPlansService {
@@ -38,16 +48,16 @@ export class TreatmentPlansService {
   ): Promise<TreatmentPlanResponse> {
     // Validate that either futuregraphSessionId or focusReportId is provided
     if (!createDto.futuregraphSessionId && !createDto.focusReportId) {
-      throw new BadRequestException('Either futuregraphSessionId or focusReportId must be provided');
+      throw new ValidationError('Either futuregraphSessionId or focusReportId must be provided');
     }
 
     if (createDto.futuregraphSessionId && createDto.focusReportId) {
-      throw new BadRequestException('Only one of futuregraphSessionId or focusReportId should be provided');
+      throw new ValidationError('Only one of futuregraphSessionId or focusReportId should be provided');
     }
 
     let session: any;
-    let analysis: any;
-    let report: any;
+    let analysis: FuturegraphAnalysis;
+    let report: FuturegraphReport;
     let sourceType: 'session' | 'focus-report';
     let focusArea: string | undefined;
     let focusReportId: string | undefined;
@@ -70,7 +80,7 @@ export class TreatmentPlansService {
       );
 
       if (sessionData.session.userId !== userId) {
-        throw new ForbiddenException('You can only create treatment plans for your own sessions');
+        throw new AuthorizationError('You can only create treatment plans for your own sessions');
       }
 
       session = sessionData.session;
@@ -89,7 +99,7 @@ export class TreatmentPlansService {
       );
 
       if (sessionData.session.userId !== userId) {
-        throw new ForbiddenException('You can only create treatment plans for your own sessions');
+        throw new AuthorizationError('You can only create treatment plans for your own sessions');
       }
 
       session = sessionData.session;
@@ -180,11 +190,11 @@ export class TreatmentPlansService {
     const plan = await this.treatmentPlanModel.findOne({ planId }).exec();
 
     if (!plan) {
-      throw new NotFoundException('Treatment plan not found');
+      throw new ResourceNotFoundError('Treatment plan', planId);
     }
 
     if (plan.userId !== userId) {
-      throw new ForbiddenException('You can only view your own treatment plans');
+      throw new AuthorizationError('You can only view your own treatment plans');
     }
 
     return this.formatResponse(plan);
@@ -201,7 +211,7 @@ export class TreatmentPlansService {
     const plan = await this.treatmentPlanModel.findOne({ planId, userId }).exec();
 
     if (!plan) {
-      throw new NotFoundException('Treatment plan not found');
+      throw new ResourceNotFoundError('Treatment plan', planId);
     }
 
     Object.assign(plan, updateDto);
@@ -217,7 +227,7 @@ export class TreatmentPlansService {
     const result = await this.treatmentPlanModel.deleteOne({ planId, userId }).exec();
 
     if (result.deletedCount === 0) {
-      throw new NotFoundException('Treatment plan not found');
+      throw new ResourceNotFoundError('Treatment plan', planId);
     }
 
     return { deleted: true };
