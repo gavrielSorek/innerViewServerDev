@@ -9,7 +9,7 @@ import { AppModule } from './app.module';
 import * as admin from 'firebase-admin';
 import * as bodyParser from 'body-parser';
 import helmet from 'helmet';
-import * as compression from 'compression';
+import compression from 'compression';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';

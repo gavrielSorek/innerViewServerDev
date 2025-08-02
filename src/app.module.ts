@@ -74,10 +74,10 @@ import { CorrelationIdMiddleware } from './common/middleware/correlation-id.midd
     ThrottlerModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({
-        ttl: config.get('rateLimit.windowMs'),
-        limit: config.get('rateLimit.max'),
-      }),
+      useFactory: (config: ConfigService) => ([{
+        ttl: config.get('rateLimit.windowMs', 900), // Convert to seconds (15 minutes = 900 seconds)
+        limit: config.get('rateLimit.max', 100),
+      }]),
     }),
 
     // Scheduling

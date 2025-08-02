@@ -119,13 +119,15 @@ export abstract class BaseCrudService<
     filter: FilterQuery<T> = {},
   ): Promise<T> {
     try {
-      const document = await this.model
-        .findOneAndUpdate(
-          { _id: id, ...filter },
-          updateDto as any,
-          { new: true, runValidators: true },
-        )
-        .exec();
+      // Use findOneAndUpdate without exec() first to get proper type
+      const query = this.model.findOneAndUpdate(
+        { _id: id, ...filter },
+        updateDto as any,
+        { new: true, runValidators: true },
+      );
+      
+      // Execute and get the document
+      const document = await query.exec();
 
       if (!document) {
         throw new NotFoundException(
@@ -133,7 +135,8 @@ export abstract class BaseCrudService<
         );
       }
 
-      return document.toObject() as T;
+      // Cast through unknown first as TypeScript suggests
+      return document as unknown as T;
     } catch (error) {
       if (error instanceof NotFoundException) throw error;
       this.handleError(error, 'updating');
@@ -155,7 +158,7 @@ export abstract class BaseCrudService<
         );
       }
 
-      return document.toObject() as T;
+      return document as unknown as T;
     } catch (error) {
       if (error instanceof NotFoundException) throw error;
       this.handleError(error, 'deleting');
