@@ -1,3 +1,6 @@
+// src/meetings/meetings.service.ts
+// Service with proper typing but not extending base due to signature conflicts
+
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
@@ -5,11 +8,6 @@ import { Meeting, MeetingDocument } from './schemas/meeting.schema';
 import { CreateMeetingDto } from './dto/create-meeting.dto';
 import { UpdateMeetingDto } from './dto/update-meeting.dto';
 
-/**
- * Service for CRUD operations on meeting documents. Provides
- * type-safe signatures that ensure only the owning user and client can
- * access or modify a meeting.
- */
 @Injectable()
 export class MeetingsService {
   constructor(
@@ -25,8 +23,7 @@ export class MeetingsService {
   }
 
   /**
-   * Retrieve a single meeting, ensuring it belongs to the provided
-   * user and client. Throws when not found.
+   * Retrieve a single meeting
    */
   async findOne(id: string, clientId: string, userId: string): Promise<Meeting> {
     const meeting = await this.meetingModel.findOne({ _id: id, clientId, userId }).exec();
@@ -39,8 +36,7 @@ export class MeetingsService {
   }
 
   /**
-   * Create a new meeting document. The DTO is expected to include the
-   * userId and clientId for proper scoping.
+   * Create a new meeting document.
    */
   async create(createMeetingDto: CreateMeetingDto): Promise<Meeting> {
     const createdMeeting = new this.meetingModel(createMeetingDto);
@@ -48,8 +44,7 @@ export class MeetingsService {
   }
 
   /**
-   * Update an existing meeting. Requires the DTO to include userId
-   * and clientId so that the update is scoped correctly.
+   * Update an existing meeting.
    */
   async update(
     id: string,
@@ -73,8 +68,7 @@ export class MeetingsService {
   }
 
   /**
-   * Remove a meeting by id, clientId and userId. Throws if the
-   * document doesn't exist.
+   * Remove a meeting
    */
   async remove(id: string, clientId: string, userId: string): Promise<Meeting> {
     const result = await this.meetingModel

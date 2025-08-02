@@ -1,3 +1,6 @@
+// src/notes/notes.service.ts
+// Service with proper typing but not extending base due to signature conflicts
+
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
@@ -5,10 +8,6 @@ import { Note, NoteDocument } from './schemas/note.schema';
 import { CreateNoteDto } from './dto/create-note.dto';
 import { UpdateNoteDto } from './dto/update-note.dto';
 
-/**
- * Service for managing note documents. Includes strongly typed
- * signatures for better developer experience and correctness.
- */
 @Injectable()
 export class NotesService {
   constructor(
@@ -20,12 +19,11 @@ export class NotesService {
    * List all notes for a given user and client.
    */
   async findAll(userId: string, clientId: string): Promise<Note[]> {
-    return this.noteModel.find({ userId, clientId }).exec();
+    return this.noteModel.find({ userId, clientId }).sort('-updatedAt').exec();
   }
 
   /**
-   * Fetch a single note scoped to the supplied user and client. Throws
-   * when no document exists.
+   * Fetch a single note
    */
   async findOne(id: string, clientId: string, userId: string): Promise<Note> {
     const note = await this.noteModel.findOne({ _id: id, clientId, userId }).exec();
@@ -38,8 +36,7 @@ export class NotesService {
   }
 
   /**
-   * Create a new note. The DTO passed in should already contain
-   * userId and clientId properties.
+   * Create a new note.
    */
   async create(
     createNoteDto: CreateNoteDto & { clientId: string; userId: string },
@@ -49,9 +46,7 @@ export class NotesService {
   }
 
   /**
-   * Update an existing note by id and scope. Both PUT and PATCH
-   * operations funnel through this method. Throws if the document
-   * cannot be found.
+   * Update an existing note
    */
   async update(
     id: string,
@@ -75,8 +70,7 @@ export class NotesService {
   }
 
   /**
-   * Delete a note by id, client and user. Throws when the document is
-   * not present.
+   * Delete a note
    */
   async remove(id: string, clientId: string, userId: string): Promise<Note> {
     const result = await this.noteModel
