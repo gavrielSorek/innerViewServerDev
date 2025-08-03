@@ -89,7 +89,7 @@ export class FuturegraphService {
       // Perform complete analysis in a single round
       const analysis: FuturegraphAnalysis = await this.aiService.analyzeComplete(
         dto.handwritingImage,
-        session.clientContext,
+        session.clientContext || {} as ClientContext,
         {},
         language,
       );
