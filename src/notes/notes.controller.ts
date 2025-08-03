@@ -33,7 +33,7 @@ export class NotesController {
     @Param('userId') userId: string,
     @Param('clientId') clientId: string,
   ) {
-    return this.notesService.findAll(userId, clientId);
+    return this.notesService.findAllForUserAndClient(userId, clientId);
   }
 
   /**
@@ -45,7 +45,7 @@ export class NotesController {
     @Param('clientId') clientId: string,
     @Param('id') id: string,
   ) {
-    return this.notesService.findOne(id, clientId, userId);
+    return this.notesService.findOneForUserAndClient(id, clientId, userId);
   }
 
   /**
@@ -58,7 +58,7 @@ export class NotesController {
     @Param('clientId') clientId: string,
     @Body() createNoteDto: CreateNoteDto,
   ) {
-    return this.notesService.create({ ...createNoteDto, clientId, userId });
+    return this.notesService.createForUserAndClient({ ...createNoteDto, clientId, userId });
   }
 
   /**
@@ -74,7 +74,7 @@ export class NotesController {
     @Param('id') id: string,
     @Body() createNoteDto: CreateNoteDto,
   ) {
-    return this.notesService.update(id, {
+    return this.notesService.updateForUserAndClient(id, {
       ...createNoteDto,
       clientId,
       userId,
@@ -93,7 +93,7 @@ export class NotesController {
     @Param('id') id: string,
     @Body() updateNoteDto: UpdateNoteDto,
   ) {
-    return this.notesService.update(id, {
+    return this.notesService.updateForUserAndClient(id, {
       ...(updateNoteDto as any),
       clientId,
       userId,
@@ -109,6 +109,6 @@ export class NotesController {
     @Param('clientId') clientId: string,
     @Param('id') id: string,
   ) {
-    return this.notesService.remove(id, clientId, userId);
+    return this.notesService.removeForUserAndClient(id, clientId, userId);
   }
 }

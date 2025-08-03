@@ -58,7 +58,7 @@ export class TreatmentPlanAiService {
 
     try {
       const completion = await this.openai.chat.completions.create({
-        model: this.configService.get<string>('openai.model'),
+        model: this.configService.get<string>('openai.model') || 'gpt-4',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },

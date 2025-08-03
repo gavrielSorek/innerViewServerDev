@@ -1,5 +1,5 @@
 // src/clients/clients.service.ts
-// Service refactored to extend base service with proper typing
+// Complete fixed version
 
 import { Injectable, Inject, forwardRef, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
@@ -26,24 +26,16 @@ export class ClientsService extends UserScopedCrudService<
   }
 
   /**
-   * Override remove to also delete FutureGraph data
+   * Override removeForUser to also delete FutureGraph data
+   * Returns the document type as expected by base class
    */
-  async removeForUser(id: string, userId: string): Promise<{
-    client: Client;
-    futuregraphDeletion?: {
-      sessionsDeleted: number;
-      imagesDeleted: number;
-      focusReportsDeleted: number;
-      errors: string[];
-    };
-  }> {
+  async removeForUser(id: string, userId: string): Promise<ClientDocument> {
     // First check if client exists
     const client = await this.findOneForUser(id, userId);
     
     // Delete all FutureGraph sessions for this client
-    let futuregraphDeletion;
     try {
-      futuregraphDeletion = await this.futuregraphService.deleteClientSessions(
+      const futuregraphDeletion = await this.futuregraphService.deleteClientSessions(
         id,
         userId,
       );
@@ -56,6 +48,61 @@ export class ClientsService extends UserScopedCrudService<
       );
     } catch (error) {
       this.logger.error(`Error deleting FutureGraph data for client ${id}:`, error);
+    }
+
+    // Delete the client using base method - returns ClientDocument
+    return super.removeForUser(id, userId);
+  }
+
+  // Legacy methods for backward compatibility
+  // These methods have different signatures than the base class
+  // so we rename them to avoid conflicts
+  
+  async findAllClients(userId: string): Promise<Client[]> {
+    const docs = await this.findAllForUser(userId);
+    return docs.map(doc => doc.toObject() as Client);
+  }
+
+  async findOneClient(id: string, userId: string): Promise<Client> {
+    const doc = await this.findOneForUser(id, userId);
+    if (!doc) {
+      throw new ResourceNotFoundError('Client', id);
+    }
+    return doc.toObject() as Client;
+  }
+
+  async createClient(createClientDto: CreateClientDto): Promise<Client> {
+    const doc = await super.create(createClientDto);
+    return doc.toObject() as Client;
+  }
+
+  async updateClient(
+    id: string,
+    updateClientDto: CreateClientDto & { userId: string },
+  ): Promise<Client> {
+    const doc = await this.updateForUser(
+      id,
+      updateClientDto.userId,
+      updateClientDto,
+    );
+    if (!doc) {
+      throw new ResourceNotFoundError('Client', id);
+    }
+    return doc.toObject() as Client;
+  }
+
+  async removeClient(id: string, userId: string): Promise<any> {
+    const client = await this.findOneForUser(id, userId);
+    const clientObj = client.toObject() as Client;
+    
+    // Delete and get futuregraph info
+    let futuregraphDeletion;
+    try {
+      futuregraphDeletion = await this.futuregraphService.deleteClientSessions(
+        id,
+        userId,
+      );
+    } catch (error) {
       futuregraphDeletion = {
         sessionsDeleted: 0,
         imagesDeleted: 0,
@@ -64,48 +111,37 @@ export class ClientsService extends UserScopedCrudService<
       };
     }
 
-    // Delete the client using base method
+    // Now delete the client
     await super.removeForUser(id, userId);
 
     return {
-      client: client as Client,
+      client: clientObj,
       futuregraphDeletion,
     };
   }
-
-  // Legacy methods for backward compatibility
+  
+  // Add wrapper methods that match the controller expectations
+  // These delegate to the renamed methods above
   async findAll(userId: string): Promise<Client[]> {
-    return this.findAllForUser(userId);
+    return this.findAllClients(userId);
   }
 
   async findOne(id: string, userId: string): Promise<Client> {
-    const client = await this.findOneForUser(id, userId);
-    if (!client) {
-      throw new ResourceNotFoundError('Client', id);
-    }
-    return client;
+    return this.findOneClient(id, userId);
   }
 
   async create(createClientDto: CreateClientDto): Promise<Client> {
-    return super.create(createClientDto);
+    return this.createClient(createClientDto);
   }
 
   async update(
     id: string,
     updateClientDto: CreateClientDto & { userId: string },
   ): Promise<Client> {
-    const client = await this.updateForUser(
-      id,
-      updateClientDto.userId,
-      updateClientDto,
-    );
-    if (!client) {
-      throw new ResourceNotFoundError('Client', id);
-    }
-    return client;
+    return this.updateClient(id, updateClientDto);
   }
 
   async remove(id: string, userId: string): Promise<any> {
-    return this.removeForUser(id, userId);
+    return this.removeClient(id, userId);
   }
 }

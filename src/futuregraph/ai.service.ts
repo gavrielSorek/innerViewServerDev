@@ -37,7 +37,7 @@ export class AiService {
 
     try {
       const completion = await this.openai.chat.completions.create({
-        model: this.configService.get<string>('openai.model'),
+        model: this.configService.get<string>('openai.model') || 'gpt-4',
         messages: [
           { role: 'system', content: systemPrompt },
           {
@@ -248,7 +248,7 @@ Return the analysis in JSON format with the following structure:`;
 
     try {
       const completion = await this.openai.chat.completions.create({
-        model: this.configService.get<string>('openai.model'),
+        model: this.configService.get<string>('openai.model') || 'gpt-4',
         messages: [{ role: 'system', content: prompt }],
         response_format: { type: "json_object" },
       });

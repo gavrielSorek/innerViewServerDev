@@ -235,7 +235,7 @@ export class FuturegraphService {
     try {
       // Generate focused analysis using AI
       const focusedAnalysis: FuturegraphAnalysis = await this.aiService.getFocusedAnalysis(
-        session.completeAnalysis,
+        session.completeAnalysis as FuturegraphAnalysis,
         focus,
         language,
       );
@@ -248,7 +248,7 @@ export class FuturegraphService {
       );
 
       // Save the focus report
-      const focusReport = new this.focusReportModel({
+      const focusReportDoc = new this.focusReportModel({
         focusReportId,
         name: focusReportName,
         sessionId,
@@ -261,7 +261,7 @@ export class FuturegraphService {
         status: 'completed',
       });
 
-      await focusReport.save();
+      await focusReportDoc.save();
 
       return {
         focusReportId,
@@ -270,7 +270,7 @@ export class FuturegraphService {
       };
     } catch (error) {
       // Save failed attempt
-      const focusReport = new this.focusReportModel({
+      const focusReportDoc = new this.focusReportModel({
         focusReportId,
         sessionId,
         userId,
@@ -283,7 +283,7 @@ export class FuturegraphService {
         error: error instanceof Error ? error.message : String(error),
       });
 
-      await focusReport.save();
+      await focusReportDoc.save();
       throw error;
     }
   }
@@ -599,7 +599,7 @@ export class FuturegraphService {
 
     // Use aiService for focused analysis
     const focusedReport = await this.aiService.getFocusedAnalysis(
-      analysisJson,
+      analysisJson as FuturegraphAnalysis,
       focus,
       language,
     );

@@ -1,5 +1,4 @@
-// src/meetings/meetings.service.ts
-// Service refactored to extend base service with proper typing
+// Fix src/meetings/meetings.service.ts
 
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
@@ -9,11 +8,6 @@ import { CreateMeetingDto } from './dto/create-meeting.dto';
 import { UpdateMeetingDto } from './dto/update-meeting.dto';
 import { BaseCrudService } from '../common/services/base-crud.service';
 import { ResourceNotFoundError } from '../common/errors/custom-errors';
-
-interface MeetingFilter extends FilterQuery<MeetingDocument> {
-  userId: string;
-  clientId: string;
-}
 
 @Injectable()
 export class MeetingsService extends BaseCrudService<
@@ -29,56 +23,102 @@ export class MeetingsService extends BaseCrudService<
   }
 
   /**
-   * Find all meetings for a user and client
+   * Override base methods to match expected signatures
    */
-  async findAll(userId: string, clientId: string): Promise<Meeting[]> {
-    const filter: MeetingFilter = { userId, clientId };
-    return super.findAll(filter, { sortBy: '-date' });
+  async findAll(
+    filter: FilterQuery<MeetingDocument> = {},
+    options?: any,
+  ): Promise<MeetingDocument[]> {
+    // If called with legacy signature (userId, clientId)
+    if (typeof filter === 'string' && typeof options === 'string') {
+      const userId = filter;
+      const clientId = options;
+      return super.findAll({ userId, clientId }, { sortBy: '-date' });
+    }
+    // Normal call
+    return super.findAll(filter, options);
   }
 
-  /**
-   * Find one meeting with user/client validation
-   */
-  async findOne(id: string, clientId: string, userId: string): Promise<Meeting> {
-    const filter: MeetingFilter = { clientId, userId };
-    const meeting = await super.findOne(id, filter);
-    if (!meeting) {
+  async findOne(
+    id: string,
+    filter: FilterQuery<MeetingDocument> = {},
+    options?: any,
+  ): Promise<MeetingDocument> {
+    // If called with legacy signature (id, clientId, userId)
+    if (typeof filter === 'string' && typeof options === 'string') {
+      const clientId = filter;
+      const userId = options;
+      return super.findOne(id, { clientId, userId });
+    }
+    // Normal call
+    return super.findOne(id, filter, options);
+  }
+
+  async update(
+    id: string,
+    updateDto: UpdateMeetingDto,
+    filter?: FilterQuery<MeetingDocument>,
+  ): Promise<MeetingDocument> {
+    // Handle the extended DTO with clientId and userId
+    const dto = updateDto as any;
+    if (dto.clientId && dto.userId) {
+      const { clientId, userId, ...updateData } = dto;
+      return super.update(id, updateData, { clientId, userId });
+    }
+    return super.update(id, updateDto, filter);
+  }
+
+  async remove(
+    id: string,
+    filter?: FilterQuery<MeetingDocument>,
+  ): Promise<MeetingDocument> {
+    return super.remove(id, filter);
+  }
+
+  // Add convenience methods that match controller expectations
+  async findAllForUserAndClient(userId: string, clientId: string): Promise<Meeting[]> {
+    const docs = await this.findAll({ userId, clientId }, { sortBy: '-date' });
+    return docs.map(doc => doc.toObject() as Meeting);
+  }
+
+  async findOneForUserAndClient(
+    id: string,
+    clientId: string,
+    userId: string,
+  ): Promise<Meeting> {
+    const doc = await this.findOne(id, { clientId, userId });
+    if (!doc) {
       throw new ResourceNotFoundError('Meeting', id);
     }
-    return meeting;
+    return doc.toObject() as Meeting;
   }
 
-  /**
-   * Update a meeting with validation
-   */
-  async update(
+  async updateForUserAndClient(
     id: string,
     updateMeetingDto: UpdateMeetingDto & { clientId: string; userId: string },
   ): Promise<Meeting> {
     const { clientId, userId, ...updateData } = updateMeetingDto;
-    const filter: MeetingFilter = { clientId, userId };
-    
-    const meeting = await super.update(id, updateData, filter);
-    if (!meeting) {
+    const doc = await this.update(id, updateData, { clientId, userId });
+    if (!doc) {
       throw new ResourceNotFoundError('Meeting', id);
     }
-    return meeting;
+    return doc.toObject() as Meeting;
+  }
+
+  async removeForUserAndClient(
+    id: string,
+    clientId: string,
+    userId: string,
+  ): Promise<Meeting> {
+    const doc = await this.remove(id, { clientId, userId });
+    if (!doc) {
+      throw new ResourceNotFoundError('Meeting', id);
+    }
+    return doc.toObject() as Meeting;
   }
 
   /**
-   * Remove a meeting with validation
-   */
-  async remove(id: string, clientId: string, userId: string): Promise<Meeting> {
-    const filter: MeetingFilter = { clientId, userId };
-    const meeting = await super.remove(id, filter);
-    if (!meeting) {
-      throw new ResourceNotFoundError('Meeting', id);
-    }
-    return meeting;
-  }
-
-  /**
-   * Get meetings for a specific date range
+   * Additional methods
    */
   async findByDateRange(
     userId: string,
@@ -86,19 +126,16 @@ export class MeetingsService extends BaseCrudService<
     startDate: Date,
     endDate: Date,
   ): Promise<Meeting[]> {
-    const filter: MeetingFilter = {
+    const filter: FilterQuery<MeetingDocument> = {
       userId,
       clientId,
       date: { $gte: startDate.toISOString(), $lte: endDate.toISOString() },
     };
-    return super.findAll(filter, { sortBy: 'date' });
+    const docs = await super.findAll(filter, { sortBy: 'date' });
+    return docs.map(doc => doc.toObject() as Meeting);
   }
 
-  /**
-   * Count meetings for a client
-   */
   async countForClient(userId: string, clientId: string): Promise<number> {
-    const filter: MeetingFilter = { userId, clientId };
-    return super.count(filter);
+    return super.count({ userId, clientId });
   }
 }

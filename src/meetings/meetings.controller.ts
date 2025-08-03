@@ -21,8 +21,7 @@ export class MeetingsController {
 
   @Get()
   findAll(@Param('userId') userId: string, @Param('clientId') clientId: string) {
-    // Assuming meetingsService.findAll needs userId to scope meetings per user
-    return this.meetingsService.findAll(userId, clientId);
+    return this.meetingsService.findAllForUserAndClient(userId, clientId);
   }
 
   @Get(':id')
@@ -31,8 +30,7 @@ export class MeetingsController {
     @Param('clientId') clientId: string,
     @Param('id') id: string,
   ) {
-    // Assuming meetingsService.findOne needs userId for proper scoping
-    return this.meetingsService.findOne(id, clientId, userId);
+    return this.meetingsService.findOneForUserAndClient(id, clientId, userId);
   }
 
   @Post()
@@ -41,7 +39,6 @@ export class MeetingsController {
     @Param('clientId') clientId: string,
     @Body() createMeetingDto: CreateMeetingDto,
   ) {
-    // Add both clientId and userId to the DTO before passing to service
     return this.meetingsService.create({ ...createMeetingDto, clientId, userId });
   }
 
@@ -52,14 +49,13 @@ export class MeetingsController {
     @Param('id') id: string,
     @Body() updateMeetingDto: CreateMeetingDto,
   ) {
-    // Add both clientId and userId to the DTO before passing to service
-    return this.meetingsService.update(id, { ...updateMeetingDto, clientId, userId } as any);
+    return this.meetingsService.updateForUserAndClient(id, { 
+      ...updateMeetingDto, 
+      clientId, 
+      userId 
+    } as any);
   }
 
-  /**
-   * Partially update a meeting.  Accepts a subset of fields defined
-   * in UpdateMeetingDto and scopes the update to the given user and client.
-   */
   @Patch(':id')
   partialUpdate(
     @Param('userId') userId: string,
@@ -67,7 +63,11 @@ export class MeetingsController {
     @Param('id') id: string,
     @Body() updateMeetingDto: UpdateMeetingDto,
   ) {
-    return this.meetingsService.update(id, { ...updateMeetingDto, clientId, userId } as any);
+    return this.meetingsService.updateForUserAndClient(id, { 
+      ...updateMeetingDto, 
+      clientId, 
+      userId 
+    } as any);
   }
 
   @Delete(':id')
@@ -76,7 +76,7 @@ export class MeetingsController {
     @Param('clientId') clientId: string,
     @Param('id') id: string,
   ) {
-    // Assuming meetingsService.remove needs userId for proper scoping
-    return this.meetingsService.remove(id, clientId, userId);
+    return this.meetingsService.removeForUserAndClient(id, clientId, userId);
   }
+
 }

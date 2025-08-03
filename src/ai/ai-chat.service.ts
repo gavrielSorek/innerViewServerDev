@@ -59,7 +59,7 @@ export class AiChatService {
 
     try {
       const completion = await this.openai.chat.completions.create({
-        model: this.configService.get<string>('openai.model'),
+        model: this.configService.get<string>('openai.model') || 'gpt-4',
         messages: [
           {
             role: 'system',

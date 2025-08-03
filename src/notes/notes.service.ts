@@ -1,5 +1,4 @@
-// src/notes/notes.service.ts
-// Service refactored to extend base service with proper typing
+// Fix src/notes/notes.service.ts
 
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
@@ -9,11 +8,6 @@ import { CreateNoteDto } from './dto/create-note.dto';
 import { UpdateNoteDto } from './dto/update-note.dto';
 import { BaseCrudService } from '../common/services/base-crud.service';
 import { ResourceNotFoundError } from '../common/errors/custom-errors';
-
-interface NoteFilter extends FilterQuery<NoteDocument> {
-  userId: string;
-  clientId: string;
-}
 
 @Injectable()
 export class NotesService extends BaseCrudService<
@@ -29,99 +23,155 @@ export class NotesService extends BaseCrudService<
   }
 
   /**
-   * Find all notes for a user and client
+   * Override base methods to match expected signatures
    */
-  async findAll(userId: string, clientId: string): Promise<Note[]> {
-    const filter: NoteFilter = { userId, clientId };
-    return super.findAll(filter, { sortBy: '-updatedAt' });
-  }
-
-  /**
-   * Find one note with user/client validation
-   */
-  async findOne(id: string, clientId: string, userId: string): Promise<Note> {
-    const filter: NoteFilter = { clientId, userId };
-    const note = await super.findOne(id, filter);
-    if (!note) {
-      throw new ResourceNotFoundError('Note', id);
+  async findAll(
+    filter: FilterQuery<NoteDocument> = {},
+    options?: any,
+  ): Promise<NoteDocument[]> {
+    // If called with legacy signature (userId, clientId)
+    if (typeof filter === 'string' && typeof options === 'string') {
+      const userId = filter;
+      const clientId = options;
+      return super.findAll({ userId, clientId }, { sortBy: '-updatedAt' });
     }
-    return note;
+    // Normal call
+    return super.findAll(filter, options);
   }
 
-  /**
-   * Create a new note with proper typing
-   */
-  async create(
-    createNoteDto: CreateNoteDto & { clientId: string; userId: string },
-  ): Promise<Note> {
+  async findOne(
+    id: string,
+    filter: FilterQuery<NoteDocument> = {},
+    options?: any,
+  ): Promise<NoteDocument> {
+    // If called with legacy signature (id, clientId, userId)
+    if (typeof filter === 'string' && typeof options === 'string') {
+      const clientId = filter;
+      const userId = options;
+      return super.findOne(id, { clientId, userId });
+    }
+    // Normal call
+    return super.findOne(id, filter, options);
+  }
+
+  async create(createDto: CreateNoteDto): Promise<NoteDocument> {
+    // Handle extended DTO with timestamps
+    const dto = createDto as any;
     const noteData = {
-      ...createNoteDto,
-      createdAt: createNoteDto.createdAt || new Date().toISOString(),
-      updatedAt: createNoteDto.updatedAt || new Date().toISOString(),
+      ...dto,
+      createdAt: dto.createdAt || new Date().toISOString(),
+      updatedAt: dto.updatedAt || new Date().toISOString(),
     };
     return super.create(noteData);
   }
 
-  /**
-   * Update a note with validation
-   */
   async update(
+    id: string,
+    updateDto: UpdateNoteDto,
+    filter?: FilterQuery<NoteDocument>,
+  ): Promise<NoteDocument> {
+    // Handle the extended DTO with clientId and userId
+    const dto = updateDto as any;
+    if (dto.clientId && dto.userId) {
+      const { clientId, userId, ...updateData } = dto;
+      const noteData = {
+        ...updateData,
+        updatedAt: new Date().toISOString(),
+      };
+      return super.update(id, noteData, { clientId, userId });
+    }
+    return super.update(id, { ...updateDto, updatedAt: new Date().toISOString() }, filter);
+  }
+
+  async remove(
+    id: string,
+    filter?: FilterQuery<NoteDocument>,
+  ): Promise<NoteDocument> {
+    // Handle legacy signature (id, clientId, userId)
+    if (arguments.length === 3) {
+      const clientId = arguments[1];
+      const userId = arguments[2];
+      return super.remove(id, { clientId, userId });
+    }
+    return super.remove(id, filter);
+  }
+
+  // Add convenience methods that match controller expectations
+  async findAllForUserAndClient(userId: string, clientId: string): Promise<Note[]> {
+    const docs = await this.findAll({ userId, clientId }, { sortBy: '-updatedAt' });
+    return docs.map(doc => doc.toObject() as Note);
+  }
+
+  async findOneForUserAndClient(
+    id: string,
+    clientId: string,
+    userId: string,
+  ): Promise<Note> {
+    const doc = await this.findOne(id, { clientId, userId });
+    if (!doc) {
+      throw new ResourceNotFoundError('Note', id);
+    }
+    return doc.toObject() as Note;
+  }
+
+  async createForUserAndClient(
+    createNoteDto: CreateNoteDto & { clientId: string; userId: string },
+  ): Promise<Note> {
+    const doc = await this.create(createNoteDto);
+    return doc.toObject() as Note;
+  }
+
+  async updateForUserAndClient(
     id: string,
     updateNoteDto: UpdateNoteDto & { clientId: string; userId: string },
   ): Promise<Note> {
     const { clientId, userId, ...updateData } = updateNoteDto;
-    const filter: NoteFilter = { clientId, userId };
-    
-    // Update the updatedAt timestamp
     const noteData = {
       ...updateData,
       updatedAt: new Date().toISOString(),
     };
-    
-    const note = await super.update(id, noteData, filter);
-    if (!note) {
+    const doc = await this.update(id, noteData, { clientId, userId });
+    if (!doc) {
       throw new ResourceNotFoundError('Note', id);
     }
-    return note;
+    return doc.toObject() as Note;
+  }
+
+  async removeForUserAndClient(
+    id: string,
+    clientId: string,
+    userId: string,
+  ): Promise<Note> {
+    const doc = await this.remove(id, { clientId, userId });
+    if (!doc) {
+      throw new ResourceNotFoundError('Note', id);
+    }
+    return doc.toObject() as Note;
   }
 
   /**
-   * Remove a note with validation
-   */
-  async remove(id: string, clientId: string, userId: string): Promise<Note> {
-    const filter: NoteFilter = { clientId, userId };
-    const note = await super.remove(id, filter);
-    if (!note) {
-      throw new ResourceNotFoundError('Note', id);
-    }
-    return note;
-  }
-
-  /**
-   * Search notes by content
+   * Additional methods
    */
   async searchByContent(
     userId: string,
     clientId: string,
     searchTerm: string,
   ): Promise<Note[]> {
-    const filter: NoteFilter = {
+    const filter: FilterQuery<NoteDocument> = {
       userId,
       clientId,
       content: { $regex: searchTerm, $options: 'i' },
     };
-    return super.findAll(filter, { sortBy: '-updatedAt' });
+    const docs = await super.findAll(filter, { sortBy: '-updatedAt' });
+    return docs.map(doc => doc.toObject() as Note);
   }
 
-  /**
-   * Get recent notes
-   */
   async getRecentNotes(
     userId: string,
     clientId: string,
     limit: number = 5,
   ): Promise<Note[]> {
-    const filter: NoteFilter = { userId, clientId };
+    const filter: FilterQuery<NoteDocument> = { userId, clientId };
     const notes = await this.model
       .find(filter)
       .sort('-updatedAt')
@@ -131,11 +181,7 @@ export class NotesService extends BaseCrudService<
     return notes.map(note => note.toObject() as Note);
   }
 
-  /**
-   * Count notes for a client
-   */
   async countForClient(userId: string, clientId: string): Promise<number> {
-    const filter: NoteFilter = { userId, clientId };
-    return super.count(filter);
+    return super.count({ userId, clientId });
   }
 }
